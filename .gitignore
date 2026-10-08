@@ -1,0 +1,18 @@
+# --- Simulación (Icarus / GTKWave) ---
+*.vvp
+*.vcd
+*.fst
+
+# --- Verilator (por si lo usan después) ---
+obj_dir/
+
+# --- Python (ensamblador y herramienta de carga) ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- Sistema operativo / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
