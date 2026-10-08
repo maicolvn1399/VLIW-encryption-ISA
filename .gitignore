@@ -1,0 +1,22 @@
+# Compilación y artefactos de simulación
+*.out
+*.vvp
+*.o
+
+# Archivos de ndas (Waveforms)
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+
+
+# Registros y carpetas temporales de EDA
+*.log
+work/
+*.key
+
+
+# Configuración local de editor y SO
+.vscode/
+.DS_Store
+Thumbs.db
