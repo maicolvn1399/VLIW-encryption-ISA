@@ -27,7 +27,7 @@ module key_vault_model (
     // real, que entrega cero cuando no concede. En 0 presenta la subllave de
     // todas formas.
     //
-    // ⚠️ El valor 0 existe solo para una prueba: que crypto_unit no dependa de
+    // El valor 0 existe solo para una prueba: que crypto_unit no dependa de
     // que la boveda le esconda la llave. El aislamiento tiene que sostenerse
     // tambien si la subllave esta presente en la entrada.
     input  logic        gate_subkey,
