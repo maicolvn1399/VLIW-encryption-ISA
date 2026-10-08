@@ -84,7 +84,7 @@ module lsu (
                     raw_half = mem_read_data >> (eff_addr[1:0] * 8);
                     rd_load_data = is_unsigned ? {16'b0, raw_half} : {{16{raw_half[15]}}, raw_half};
                 end
-                2 me'b11: begin // Word (LW, LW.INC)
+                2'b11: begin // Word (LW, LW.INC)
                     rd_load_data = mem_read_data;
                 end
                 default: rd_load_data = 32'b0;
