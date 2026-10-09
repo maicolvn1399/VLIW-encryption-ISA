@@ -28,7 +28,7 @@ PKGS  := $(wildcard $(CPU)/*_pkg.sv)
 UNITS := $(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv))
 
 # ---- Dependencias extra por unidad (agregar aquí) ---------------------------
-# DEPS_crypto_unit := $(CPU)/key_vault.sv
+DEPS_crypto_unit := $(TB)/key_vault_model.sv
 # DEPS_top         := $(filter-out $(PKGS),$(wildcard $(CPU)/*.sv))
 
 .PHONY: all sim list clean $(UNITS) $(addprefix wave-,$(UNITS))
