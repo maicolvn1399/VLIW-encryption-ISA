@@ -35,10 +35,12 @@
 //       S3 completo; el vault solo reconoce 001..101.
 // =============================================================================
 
+`include "cerbero_defs.svh"
+
 module key_vault #(
     parameter logic [127:0] ROT_SECRET_INIT = 128'h0123_4567_89AB_CDEF_FEDC_BA98_7654_3210,
-    parameter logic [31:0]  SEC_BASE        = 32'h0000_7000,
-    parameter logic [31:0]  SEC_LIMIT       = 32'h0000_7FFF
+    parameter logic [31:0]  SEC_BASE        = `SEC_BASE_DEF,
+    parameter logic [31:0]  SEC_LIMIT       = `SEC_LIMIT_DEF
 )(
     input  logic        clk,
     input  logic        rst_n,          // reset síncrono, activo en bajo
@@ -63,23 +65,28 @@ module key_vault #(
 );
 
     // -------------------------------------------------------------------------
-    // Constantes del ISA (mover a cerbero_pkg.sv cuando exista)
+    // Constantes del ISA, derivadas de cerbero_defs.svh.
+    //
+    // Los nombres locales se conservan porque hacen legible el cuerpo del
+    // modulo, pero los numeros vienen del archivo de definiciones: renumerar
+    // un opcode se hace en un solo lugar y el RTL y los testbenches quedan
+    // sincronizados.
     // -------------------------------------------------------------------------
-    localparam logic [2:0] OP_F4E   = 3'b001;
-    localparam logic [2:0] OP_F4D   = 3'b010;
-    localparam logic [2:0] OP_KSETW = 3'b011;
-    localparam logic [2:0] OP_AUTHW = 3'b100;
-    localparam logic [2:0] OP_VCTL  = 3'b101;
+    localparam logic [2:0] OP_F4E   = `CRP_F4E;
+    localparam logic [2:0] OP_F4D   = `CRP_F4D;
+    localparam logic [2:0] OP_KSETW = `CRP_KSETW;
+    localparam logic [2:0] OP_AUTHW = `CRP_AUTHW;
+    localparam logic [2:0] OP_VCTL  = `CRP_VCTL;
 
-    localparam logic [1:0] FN_LOGIN  = 2'b00;
-    localparam logic [1:0] FN_LOGOUT = 2'b01;
-    localparam logic [1:0] FN_PWSET  = 2'b10;
-    localparam logic [1:0] FN_KCLR   = 2'b11;
+    localparam logic [1:0] FN_LOGIN  = `VCTL_LOGIN;
+    localparam logic [1:0] FN_LOGOUT = `VCTL_LOGOUT;
+    localparam logic [1:0] FN_PWSET  = `VCTL_PWSET;
+    localparam logic [1:0] FN_KCLR   = `VCTL_KCLR;
 
-    localparam logic [2:0] C_NONE   = 3'b000;
-    localparam logic [2:0] C_ILLOP  = 3'b001;
-    localparam logic [2:0] C_DENIED = 3'b100;
-    localparam logic [2:0] C_NOKEY  = 3'b101;
+    localparam logic [2:0] C_NONE   = `CAUSE_NONE;
+    localparam logic [2:0] C_ILLOP  = `CAUSE_ILLOP;
+    localparam logic [2:0] C_DENIED = `CAUSE_DENIED;
+    localparam logic [2:0] C_NOKEY  = `CAUSE_NOKEY;
 
     // -------------------------------------------------------------------------
     // Estado interno. NINGUNO de estos registros tiene ruta hacia una salida
@@ -97,11 +104,11 @@ module key_vault #(
     logic [2:0] opc;
     logic [1:0] fA, fB;          // [12:11] y [10:9] (tipo V)
     logic [1:0] f_kv, f_ronda;   // tipo F
-    assign opc     = slot[15:13];
-    assign fA      = slot[12:11];
-    assign fB      = slot[10:9];
-    assign f_kv    = slot[9:8];
-    assign f_ronda = slot[7:6];
+    assign opc     = slot[`S3_OPC];
+    assign fA      = slot[`S3_FLD_A];
+    assign fB      = slot[`S3_FLD_B];
+    assign f_kv    = slot[`S3_KV];
+    assign f_ronda = slot[`S3_RONDA];
 
     logic is_f4, is_ksetw, is_authw, is_vctl;
     assign is_f4    = valid && (opc == OP_F4E || opc == OP_F4D);

@@ -2,6 +2,16 @@
 // cerbero_defs.svh
 // CERBERO-1 - Definiciones compartidas del ISA
 //
+// Unica fuente de verdad para anchos, posiciones de campo, opcodes, codigos de
+// condicion y causas de falla. Todo modulo y todo testbench que necesite uno
+// de esos numeros lo toma de aqui: si manana se renumera un opcode se cambia
+// en una sola linea y el RTL y las pruebas quedan sincronizados.
+//
+// Los modulos pueden seguir declarando localparam con nombres locales, pero
+// derivados de estas macros y no escritos a mano:
+//
+//     localparam logic [2:0] OP_F4D = `CRP_F4D;
+//
 // Se usan macros `define en lugar de un package de SystemVerilog porque el
 // soporte de packages en Icarus Verilog es parcial segun la version. Las
 // macros funcionan de forma identica en iverilog -g2012 y en Verilator.
@@ -18,6 +28,9 @@
 `define BUNDLE_W 128   // Ancho del bundle
 `define NSLOTS     5   // Cantidad de slots por bundle
 
+// Registro de enlace, escrito implicitamente por JAL y JALR
+`define REG_LINK  4'd15
+
 //------------------------------------------------------------------------------
 // Rangos de bits del bundle de 128 bits
 //------------------------------------------------------------------------------
@@ -27,15 +40,19 @@
 `define SLOT_S3  31:16   // Criptografica / boveda / ALU corta
 `define SLOT_S4  15:0    // BRU
 
+//==============================================================================
+// SLOTS DE 32 BITS  (S0, S1, S2)
+//==============================================================================
+
 //------------------------------------------------------------------------------
 // Campos del slot de 32 bits (tipos A, I, U, M)
 //------------------------------------------------------------------------------
 `define F_OPC    31:27   // Opcode de 5 bits
-`define F_RD     26:23   // Registro destino
-`define F_RS1    22:19   // Primer operando fuente
+`define F_RD     26:23   // Registro destino, o rs_dato en un store
+`define F_RS1    22:19   // Primer operando fuente, o rbase en el tipo M
 `define F_RS2    18:15   // Segundo operando fuente (tipo A)
 `define F_RSVA   14:0    // Reservado del tipo A, debe valer cero
-`define F_IMM19  18:0    // Inmediato con signo (tipo I)
+`define F_IMM19  18:0    // Inmediato con signo (tipos I y M)
 `define F_IMM16  18:3    // Inmediato de 16 bits (tipo U)
 `define F_COND   2:0     // Codigo de condicion (tipo U, SETcc)
 
@@ -79,6 +96,151 @@
 `define ALU_TESTI 5'b11111   // solo S0
 
 //------------------------------------------------------------------------------
+// Opcodes del slot LSU (S2), tipo M
+//
+// El opcode esta estructurado por campos, de modo que la unidad decide que
+// hacer mirando bits individuales en vez de decodificar el valor completo:
+//
+//   opcode[4] = INC   1 = escribe de vuelta el registro base
+//   opcode[3] = ST    0 = load, 1 = store
+//   opcode[2:1] = TAM 01 = byte, 10 = media palabra, 11 = palabra
+//   opcode[0] = U     1 = extension con ceros (solo loads)
+//
+// Las combinaciones con TAM = 00, las de store con U = 1 y las variantes .INC
+// no listadas quedan reservadas y producen ILLOP.
+//------------------------------------------------------------------------------
+`define LSU_NOP     5'b00000
+`define LSU_LB      5'b00010
+`define LSU_LBU     5'b00011
+`define LSU_LH      5'b00100
+`define LSU_LHU     5'b00101
+`define LSU_LW      5'b00110
+`define LSU_SB      5'b01010
+`define LSU_SH      5'b01100
+`define LSU_SW      5'b01110
+`define LSU_LW_INC  5'b10110
+`define LSU_SW_INC  5'b11110
+
+// Subcampos del opcode de S2
+`define LSU_BIT_INC  4
+`define LSU_BIT_ST   3
+`define LSU_FLD_TAM  2:1
+`define LSU_BIT_U    0
+
+// Codificacion del campo de tamano
+`define LSU_TAM_RSV  2'b00
+`define LSU_TAM_B    2'b01
+`define LSU_TAM_H    2'b10
+`define LSU_TAM_W    2'b11
+
+//==============================================================================
+// SLOT S3  (16 bits): criptografia, boveda y ALU corta
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// Opcodes de S3
+//------------------------------------------------------------------------------
+`define CRP_NOP   3'b000
+`define CRP_F4E   3'b001   // tipo F
+`define CRP_F4D   3'b010   // tipo F
+`define CRP_KSETW 3'b011   // tipo V
+`define CRP_AUTHW 3'b100   // tipo V
+`define CRP_VCTL  3'b101   // tipo V
+`define CRP_SALU  3'b110   // tipo AC
+`define CRP_RSV   3'b111   // reservado
+
+//------------------------------------------------------------------------------
+// Subfunciones de VCTL, campo [12:11]
+//------------------------------------------------------------------------------
+`define VCTL_LOGIN  2'b00
+`define VCTL_LOGOUT 2'b01
+`define VCTL_PWSET  2'b10
+`define VCTL_KCLR   2'b11
+
+//------------------------------------------------------------------------------
+// Campos de S3
+//
+//   Tipo F   [15:13] opcode | [12:10] par  | [9:8] kv     | [7:6] ronda | [5:0] rsv
+//   Tipo V   [15:13] opcode | [12:11] A    | [10:9] B     | [8:5] rs    | [4:0] rsv
+//   Tipo AC  [15:13] opcode | [12] i       | [11:9] subop | [8:5] rd    | [4:0] op2
+//
+// En el tipo V los campos A y B cambian de significado segun el opcode:
+//
+//   KSETW    A = kv      B = widx
+//   AUTHW    A = rsv     B = widx     (decision D1, isa.md 5.2)
+//   VCTL     A = subfn   B = kv, solo en KCLR
+//
+// El campo de registro principal ocupa siempre [8:5] en los tres formatos
+// cortos, de modo que el decodificador lo extrae sin logica condicional.
+//------------------------------------------------------------------------------
+`define S3_OPC     15:13
+`define S3_PAR     12:10
+`define S3_KV       9:8
+`define S3_RONDA    7:6
+`define S3_F_RSV    5:0
+
+`define S3_FLD_A   12:11
+`define S3_FLD_B   10:9
+`define S3_RS       8:5
+`define S3_V_RSV    4:0
+
+`define S3_AC_I       12
+`define S3_AC_SUBOP 11:9
+`define S3_AC_RD     8:5
+`define S3_AC_OP2    4:0
+`define S3_AC_RS2    3:0
+`define S3_AC_RSV      4
+
+//------------------------------------------------------------------------------
+// Suboperaciones de la ALU corta, campo [11:9]
+//
+// Formato destructivo: rd <- rd op operando. Las dos unarias ignoran el
+// operando, asi que con i = 1 la combinacion queda reservada.
+//------------------------------------------------------------------------------
+`define SALU_ADD 3'b000
+`define SALU_SUB 3'b001
+`define SALU_AND 3'b010
+`define SALU_OR  3'b011
+`define SALU_XOR 3'b100
+`define SALU_MOV 3'b101
+`define SALU_NOT 3'b110   // solo con i = 0
+`define SALU_NEG 3'b111   // solo con i = 0
+
+//==============================================================================
+// SLOT S4  (16 bits): control de flujo
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// Opcodes de S4
+//------------------------------------------------------------------------------
+`define BRU_NOP  3'b000
+`define BRU_BR   3'b001   // tipo C
+`define BRU_JAL  3'b010   // tipo C
+`define BRU_JR   3'b011   // tipo J
+`define BRU_JALR 3'b100   // tipo J
+`define BRU_HALT 3'b101   // tipo J
+
+//------------------------------------------------------------------------------
+// Campos de S4
+//
+//   Tipo C   [15:13] opcode | [12:10] cond | [9:0] desp
+//   Tipo J   [15:13] opcode | [12:10] cond | [9] rsv | [8:5] rs | [4:0] rsv
+//
+// El tipo C NO tiene bits reservados: el desplazamiento ocupa los diez bits
+// bajos completos.
+//------------------------------------------------------------------------------
+`define S4_OPC    15:13
+`define S4_COND   12:10
+`define S4_DESP     9:0
+`define S4_RS       8:5
+`define S4_J_RSV_HI    9
+`define S4_J_RSV_LO  4:0
+
+//==============================================================================
+// CODIGOS COMPARTIDOS
+//==============================================================================
+
+//------------------------------------------------------------------------------
 // Codigos de condicion (BRU y SETcc)
 //------------------------------------------------------------------------------
 `define COND_AL   3'b000
@@ -118,5 +280,19 @@
 `define CAUSE_DENIED   3'b100
 `define CAUSE_NOKEY    3'b101
 `define CAUSE_WCONF    3'b110
+
+//------------------------------------------------------------------------------
+// Mapa de memoria de datos (isa.md 1.4)
+//
+// Los accesos fuera de este rango producen RANGE.
+//------------------------------------------------------------------------------
+`define DMEM_BASE  32'h0000_0000
+`define DMEM_LIMIT 32'h0000_FFFF
+
+//------------------------------------------------------------------------------
+// Region segura de la memoria de instrucciones (isa.md 1.4)
+//------------------------------------------------------------------------------
+`define SEC_BASE_DEF  32'h0000_7000
+`define SEC_LIMIT_DEF 32'h0000_7FFF
 
 `endif // CERBERO_DEFS_SVH

@@ -332,6 +332,15 @@ module tb_key_vault;
         check("sin valid no hay falla", fault, 0);
         @(posedge clk); #1; slot = 0;
 
+`ifdef FORCE_FAIL
+        // ---------------- Autoprueba del arnes --------------------------------
+        // Un testbench que siempre pasa no prueba nada. Compilar con
+        // -DFORCE_FAIL inyecta un caso deliberadamente incorrecto para
+        // comprobar que el arnes sabe reportar una falla.
+        stim = "caso deliberadamente incorrecto";
+        check("autoprueba del arnes", 32'h0000_0000, 32'hFFFF_FFFF);
+`endif
+
         // ---------------- Resumen --------------------------------------------
         end_test();
         $display("==================================================");

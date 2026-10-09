@@ -3,9 +3,6 @@
 // =============================================================================
 // crypto_unit.sv - Unidad Feistel4, slot S3 del bundle (tipo F).
 //
-// Estado: T1 del plan. Esqueleto con la lista de puertos definitiva y las
-// salidas en valores inertes. El comportamiento entra en T2.
-//
 // Ejecuta UNA ronda de la red Feistel4 sobre un par de registros alineado.
 // Un bloque completo se cifra encadenando cuatro instrucciones con indice de
 // ronda 0 a 3, y se descifra con los indices en orden inverso. El
@@ -21,6 +18,8 @@
 // senal de permiso que la boveda produce. Duplicar esa logica crearia dos
 // copias capaces de divergir.
 // =============================================================================
+
+`include "cerbero_defs.svh"
 
 module crypto_unit (
     // Slot S3 crudo, bits 31:16 del bundle
@@ -53,10 +52,10 @@ module crypto_unit (
   // con permiso es cifrado.
   // ---------------------------------------------------------------------------
 
-  localparam logic [2:0] OP_F4D = 3'b010;
+  localparam logic [2:0] OP_F4D = `CRP_F4D;
 
   logic is_decrypt;
-  assign is_decrypt = (slot[15:13] == OP_F4D);
+  assign is_decrypt = (slot[`S3_OPC] == OP_F4D);
 
   // ---------------------------------------------------------------------------
   // Funcion de ronda
@@ -145,7 +144,7 @@ module crypto_unit (
   // ---------------------------------------------------------------------------
 
   logic [2:0] pair_field;
-  assign pair_field = slot[12:10];
+  assign pair_field = slot[`S3_PAR];
 
   assign l_idx = {pair_field, 1'b0};
   assign r_idx = {pair_field, 1'b1};
