@@ -2,9 +2,18 @@
 *.vvp
 *.vcd
 *.fst
+*.lxt
+*.lxt2
+*.out
+*.o
 
-# --- Verilator (por si lo usan después) ---
+# --- Verilator ---
 obj_dir/
+
+# --- Herramientas EDA ---
+*.log
+work/
+*.key
 
 # --- Python (ensamblador y herramienta de carga) ---
 __pycache__/
