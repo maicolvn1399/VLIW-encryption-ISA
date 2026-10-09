@@ -147,7 +147,7 @@ module tb_alu;
     // Secuencia de pruebas
     //--------------------------------------------------------------------------
     initial begin
-        $dumpfile("build/tb_alu.vcd");
+        $dumpfile("tb_alu.vcd");
         $dumpvars(0, tb_alu);
 
         slot_q = 32'd0; a_q = 32'd0; b_q = 32'd0; psw_q = 32'd0;

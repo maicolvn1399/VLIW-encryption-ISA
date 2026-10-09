@@ -19,7 +19,7 @@
 IVERILOG ?= iverilog
 VVP      ?= vvp
 GTKWAVE  ?= gtkwave
-FLAGS    := -g2012 -Wall -Wno-timescale
+FLAGS    := -g2012 -Wall -Wno-timescale -I ../cpu
 
 CPU := ../cpu
 TB  := ../tb
