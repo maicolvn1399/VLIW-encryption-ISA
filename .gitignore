@@ -25,3 +25,7 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .vscode/
+
+# --- Artefactos de simulacion generados en src/build ---
+src/build/*.vvp
+src/build/*.vcd

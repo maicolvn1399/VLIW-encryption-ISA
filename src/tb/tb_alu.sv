@@ -443,19 +443,21 @@ module tb_alu;
         aplicar(mk_a(`ALU_ADD, 4'd3, 4'd1, 4'd2), 32'd1, 32'd2, 32'd0);
         chk_ambos("ADD valido en ambos slots", 32'd3);
 
+`ifdef FORCE_FAIL
         //======================================================================
-        $display("================================================================");
-        if (errores == 0)
-            $display(" RESULTADO: %0d comprobaciones, todas correctas", pruebas);
-        else
-            $display(" RESULTADO: %0d comprobaciones, %0d FALLOS", pruebas, errores);
-        $display("================================================================");
+        $display("-- autoprueba del arnes --------------------------------------");
+        //======================================================================
+        chk32("caso deliberadamente incorrecto", 32'h00000000, 32'hFFFFFFFF);
+`endif
 
+        //======================================================================
+        $display("---");
+        $display("casos: %0d   fallidos: %0d", pruebas, errores);
         if (errores != 0) begin
-            $display("");
-            $display("La simulacion termina con fallos.");
+            $display("RESULTADO: FALLA");
+            $fatal(1, "%0d caso(s) fallaron", errores);
         end
-
+        $display("RESULTADO: OK");
         $finish;
     end
 

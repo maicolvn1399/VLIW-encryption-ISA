@@ -311,12 +311,20 @@ No hay campo de registro porque par identifica a los dos a la vez, y la subllave
 | :---: | :--- |
 | opcode | `011 = KSETW`, `100 = AUTHW`, `101 = VCTL` |
 | kv | Índice de llave dentro de la bóveda (0 a 3). En `KSETW` ocupa `[12:11]`; en `VCTL` ocupa `[10:9]` |
-| widx | Índice de palabra dentro de la llave o de la credencial (0 a 3). Una llave de 128 bits se instala en cuatro operaciones de 32 bits |
+| widx | Índice de palabra dentro de la llave o de la credencial (0 a 3). En `KSETW` y en `AUTHW` ocupa `[10:9]`. Una llave de 128 bits se instala en cuatro operaciones de 32 bits |
 | subfn | Solo en `VCTL`: `00 = LOGIN`, `01 = LOGOUT`, `10 = PWSET`, `11 = KCLR` |
 | rs | Registro que aporta la palabra de 32 bits, sea de llave (`KSETW`) o de credencial (`AUTHW`). Sin usar en `VCTL` |
 | reservado | 5 bits en cero |
 
-Los campos `[12:11]` y `[10:9]` cambian de significado según el opcode. Es la única parte del ISA donde ocurre, y se hace porque ninguna operación de bóveda necesita `kv`, `widx` y `subfn` al mismo tiempo.
+Los campos `[12:11]` y `[10:9]` cambian de significado según el opcode. Es la única parte del ISA donde ocurre, y se hace porque ninguna operación de bóveda necesita `kv`, `widx` y `subfn` al mismo tiempo. La asignación completa es:
+
+| Instrucción | `[12:11]` | `[10:9]` | `[8:5]` | `[4:0]` |
+| :--- | :---: | :---: | :---: | :---: |
+| `KSETW` | `kv` | `widx` | `rs` | reservado |
+| `AUTHW` | **reservado** | `widx` | `rs` | reservado |
+| `VCTL` | `subfn` | `kv`, sólo en `KCLR` | reservado | reservado |
+
+`AUTHW` deja `[12:11]` reservado en lugar de poner ahí el índice de palabra, de modo que `widx` ocupe la misma posición que en `KSETW`. Las dos instrucciones escriben una palabra de 32 bits en un registro de 128, y que el índice viva en el mismo sitio en ambas le ahorra un multiplexor al decodificador de la bóveda. Un valor distinto de cero en `[12:11]` registra `ILLOP`.
 
 #### Tipo AC – ALU corta
 
@@ -362,7 +370,9 @@ Existe porque el tipo C solo alcanza ±8 KB. Los saltos largos, el retorno de fu
 
 ## 3. Slot ALU (S0, S1)
 
-El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la operación, de modo que el decodificador en un `case` de más de 4 bits más un multiplexor de un bit. Cuatro casillas no siguen la simetría y se documentan como excepciones: `10000` (`NEG`), `10011` y `11011` (reservados) y `11101` (`MOVH`).
+El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la operación, de modo que el decodificador es un `case` de cuatro bits más un multiplexor de un bit. Cuatro casillas no siguen la simetría y se documentan como excepciones: `10000` (`NEG`), `10011` (`SETcc`), `11011` (`MFPSW`) y `11101` (`MOVH`); ninguna de las cuatro lleva inmediato de 19 bits.
+
+Los 32 opcodes del slot están definidos. En consecuencia no existe el caso de "opcode desconocido" en S0 ni en S1, y `ILLOP` sólo puede provenir de un campo reservado distinto de cero o de una comparación codificada en S1.
 
 | Mnemónico | Sintaxis | Descripción | Tipo | Opcode | Posición en bundle |
 | :---: | :--- | :--- | :---: | :---: | :---: |
@@ -385,7 +395,7 @@ El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la
 | NEG | `neg rd, rs1` | `R[rd] ← -R[rs1]` | A | `10000` | S0, S1 |
 | ADDI | `addi rd, rs1, #i` | Suma con inmediato | I | `10001` | S0, S1 |
 | SUBI | `subi rd, rs1, #i` | Resta con inmediato | I | `10010` | S0, S1 |
-| – | | Reservado | | `10011` | |
+| SETcc | `setcc rd, cond` | `R[rd] ← (cond) ? 1 : 0`, materializa una condición del PSW en un registro | U | `10011` | S0, S1 |
 | ANDI | `andi rd, rs1, #i` | AND con un inmediato | I | `10100` | S0, S1 |
 | ORI | `ori rd, rs1, #i` | OR con un inmediato | I | `10101` | S0, S1 |
 | XORI | `xori rd, rs1, #i` | XOR con un inmediato | I | `10110` | S0, S1 |
@@ -393,7 +403,7 @@ El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la
 | SRLI | `srli rd, rs1, #i` | Desplazamiento lógico a la derecha con inmediato | I | `11000` | S0, S1 |
 | SRAI | `srai rd, rs1, #i` | Desplazamiento Aritmético a la Derecha con un Inmediato | I | `11001` | S0, S1 |
 | ROLI | `roli rd, rs, #i` | Rotación izquierda inmediata | I | `11010` | S0, S1 |
-| – | | Reservado | | `11011` | |
+| MFPSW | `mfpsw rd` | `R[rd] ← PSW`, única vía para consultar `EXC`, la causa de una falla y `AUTHFAIL` | U | `11011` | S0, S1 |
 | MOVI | `movi rd, #i` | Carga inmediato con signo en registro | I | `11100` | S0, S1 |
 | MOVH | `movh rd, #i` | Cargar un número constante (un inmediato) directamente dentro de un registro | I | `11101` | S0, S1 |
 | CMPI | `cmpi rs1, #i` | Comparar directamente el contenido de un registro con un número constante | I | `11110` | Solo S0 |
@@ -438,7 +448,33 @@ El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la
 
 - Es decir, las variantes `.INC` son post-incremento: acceden a la dirección actual y luego avanzan el puntero. El inmediato es el incremento, no un desplazamiento de acceso.
 - **Caso límite:** Si `rd == base` en un `LW.INC`, prevalece el dato cargado y el incremento se descarta.
-- El postincremento permite que el acceso a memoria y la actualización del puntero ocurran en el mismo ciclo dentro de `S2`, liberando las dos ALU. Su costo es un segundo puntero de escritura en la LSU. Los opcodes con `TAM = 00` y las combinaciones `INC` no listadas quedan reservados.
+- El postincremento permite que el acceso a memoria y la actualización del puntero ocurran en el mismo ciclo dentro de `S2`, liberando las dos ALU. Su costo es un segundo puerto de escritura en la LSU.
+
+### 4.1 Opcodes reservados
+
+Tres familias de combinaciones no corresponden a ninguna instrucción y registran `ILLOP`:
+
+| Familia | Motivo |
+| :--- | :--- |
+| `TAM = 00` | No hay un tamaño de acceso de ese valor |
+| Store con `U = 1` | La extensión con ceros sólo tiene sentido al leer |
+| `.INC` que no sea de palabra | El postincremento sólo está definido para la palabra completa |
+
+### 4.2 Fallas de la unidad
+
+El tipo M no tiene bits reservados: `opcode`, `rd`, `rbase` e inmediato suman los 32 bits del slot. Las fallas que esta unidad puede registrar son otras tres:
+
+| Causa | Condición |
+| :---: | :--- |
+| `ILLOP` | El opcode no corresponde a ninguna instrucción definida |
+| `MISALIGN` | La dirección efectiva no está alineada al tamaño del acceso: la media palabra exige el bit 0 en cero y la palabra los dos bits bajos |
+| `RANGE` | La dirección efectiva cae fuera de la memoria de datos implementada |
+
+**Prioridad: `ILLOP`, `MISALIGN`, `RANGE`.** El orden no es arbitrario. Un opcode sin definir no tiene tamaño asociado, así que no se le puede juzgar la alineación; y una dirección desalineada ya está mal aunque además caiga fuera del rango. Informar la causa más temprana es informar la causa raíz.
+
+Basta comprobar la dirección de inicio contra el rango. Como la alineación ya se exigió y el límite superior más uno es múltiplo de cuatro, un acceso alineado que empieza dentro del rango termina dentro del rango.
+
+La operación nula no falla nunca, ni siquiera por los campos que no usa. Si lo hiciera, todo bundle que no use este slot fallaría, y como cualquier falla apaga el bit de autenticación, rompería una sesión de cifrado en curso por un slot que no hace nada. El mismo criterio aplica a la operación nula de los demás slots.
 
 ---
 
@@ -483,9 +519,11 @@ El bit 4 del opcode selecciona la forma del segundo operando y los bits `3:0` la
 
 ### 5.3 Tipo AC – ALU corta
 
-Formato destructivo `rd ← rd op operando`. No escribe banderas
+Formato destructivo `rd ← rd op operando`. No escribe banderas: son exclusivas de S0.
 
-| subop | `i = 0` (registro) | `i = 1` (inmediato de 5 bits, sin signo) |
+**Las operaciones unarias actúan sobre `rd`.** Como el formato es destructivo y `rd` es a la vez fuente y destino, `NOT.S` y `NEG.S` no llevan segundo operando: la sintaxis es `not.s rd`, sin `rs`. En consecuencia, con `i = 0` el campo de registro fuente no se usa y debe codificarse en cero, y con `i = 1` la combinación no significa nada y queda reservada. Las dos situaciones registran `ILLOP`; devolver cero en silencio sería peor, porque el programa no se enteraría de haber pedido algo que no existe.
+
+| `subop` | `i = 0` (registro en `[3:0]`, bit `[4]` en cero) | `i = 1` (inmediato de 5 bits, sin signo) |
 | :---: | :--- | :--- |
 | `000` | `add.s rd, rs` | `addi.s rd, #imm5` |
 | `001` | `sub.s rd, rs` | `subi.s rd, #imm5` |
@@ -493,8 +531,8 @@ Formato destructivo `rd ← rd op operando`. No escribe banderas
 | `011` | `or.s rd, rs` | `ori.s rd, #imm5` |
 | `100` | `xor.s rd, rs` | `xori.s rd, #imm5` |
 | `101` | `mov.s rd, rs` | `movi.s rd, #imm5` |
-| `110` | `not.s rd, rs` | Reservado |
-| `111` | `neg.s rd, rs` | Reservado |
+| `110` | `not.s rd` | Reservado |
+| `111` | `neg.s rd` | Reservado |
 
 - No se incluyen los desplazamientos ni la multiplicación en la ALU corta: un desplazador de barril y un multiplicador exceden el presupuesto de área de un slot secundario. Las operaciones que quedan reutilizan el sumador y las compuertas lógicas que la unidad ya no necesita.
 - La ALU corta existe para que los programas que no usan la unidad criptográfica no desperdicien un quinto de cada bundle emitiendo solo `NOP` en S3.
@@ -514,6 +552,8 @@ Formato destructivo `rd ← rd op operando`. No escribe banderas
 | Reservado | | | – | `110`–`111` |
 
 El enlace es `PC + 32` y no `PC + 16` porque el bundle siguiente es el delay slot y ya se ejecutó: el retorno debe apuntar al bundle posterior a él.
+
+**El enlace se escribe sólo si el salto se toma.** Leída al pie de la letra, la descripción "`R15 ← PC + 32`; luego salta" haría que el enlace ocurriera siempre. Esa lectura vuelve destructivo un `JAL` condicional: si la condición no se cumple, pisaría la dirección de retorno del llamador sin haber llamado a nada, y una función que use `JAL.cond` dejaría de poder retornar. La interpretación que fija esta especificación es que el enlace forma parte del salto, no del bundle.
 
 ### Código de condición
 
@@ -589,7 +629,7 @@ La suma ces modular en 2³², si acarreo de salida.
 
 ---
 
-## 8. Modelo de seguridad de la bóveda
+## 8. Red de Feistel y función de ronda
 
 ### 8.1 Estructura
 
@@ -643,7 +683,7 @@ No existe ninguna instrucción, en ningún slot, cuya fuente sea la bóveda y cu
 
 | Desición | Alternativa descartada | Razón |
 | :--- | :--- | :--- |
-| Llave instalada palabra por palabra | Instrucción que instale las 4 de una vez | `KWSET` necesita un solo puesto de lectura; la alternativa exigiría cuatro o un grupo implícito de registros que restringiría la asignación |
+| Llave instalada palabra por palabra | Instrucción que instale las 4 de una vez | `KSETW` necesita un solo puerto de lectura; la alternativa exigiría cuatro o un grupo implícito de registros que restringiría la asignación |
 | Credencial de 128 bits | Password de 32 en un registro | Simetría con el tamaño de llave y espacio de búsqueda de 2¹²⁸. El costo de codificación es cero porque `AUTHW` reutiliza la forma de `KSETW` |
 | Desafío de solo escritura | Comparar contra un registro | Evita que la credencial quede residente en un registro de propósito general donde otro código pueda leerla |
 | `KVALID` por ranura | Asmir toda llave válida | Una ronda sobre una ranura nunca inicializada cifraría con ceros sin revisar, produciendo un archivo trivialmente recuperable |
@@ -846,13 +886,18 @@ Instrucciones habituales de otras arquitecturas y su construcción en nuestra ar
 | `jle L` | `cmp ra, rb` invertidos, luego `br.ge L` |
 | `jge L` | `cmp ra, rb` luego `br.ge L` |
 | `call L` | `jal.al L` |
-| `ret` | `jr.al L` |
+| `ret` | `jr.al r15` |
 | `push rx` | `subi r14, r14, #4`, luego `sw rx, #0(r14)` |
 | `pop rx` | `lw rx, #0(r14)`, luego `addi r14, r14, #4` |
 | `mov rx, #const32` | `movi rx, #low16`, luego `movh rx, #high16` |
+| `rx = (a < b)` como valor | `cmp ra, rb` en S0, luego `setcc rx, lt` |
+| `rx = (a == b)` como valor | `cmp ra, rb` en S0, luego `setcc rx, eq` |
+| Leer la causa de la última falla | `mfpsw rx`, luego `srli rx, rx, #7` y `andi rx, rx, #7` |
 | `div ra, rb` | `jal.al __div32`, con dividendo en `R6` y divisor en `R7`; cociente en `R6` y residuo en `R7` |
 
-**Sobre la división:** CERBERO no incluye instrucción de división. Un divisor de 32 bits es multiciclo por naturaleza: implementarlo combinacional produciría el camino crítico más largo del procesador por un margen amplio, e implementarlo multiciclo obligaría a que esa instrucción tuviera una latencia distinta a todas las demás, rompiendo la única regla que constituye el contrato con el generador de código. El precedente es directo: el conjunto base de RISC-V tampoco incluye multiplicación ni división, que viven en una extensión opcional. la división se provee como subrutina `__div32`, escrita en ensamblador propio y entregada junto con el ISA. Los opcode `10011` y `11011` del slot ALU quedan reservados por si se decide incorporar en hardware.
+**Sobre la división:** CERBERO no incluye instrucción de división. Un divisor de 32 bits es multiciclo por naturaleza: implementarlo combinacional produciría el camino crítico más largo del procesador por un margen amplio, e implementarlo multiciclo obligaría a que esa instrucción tuviera una latencia distinta a todas las demás, rompiendo la única regla que constituye el contrato con el generador de código. El precedente es directo: el conjunto base de RISC-V tampoco incluye multiplicación ni división, que viven en una extensión opcional. la división se provee como subrutina `__div32`, escrita en ensamblador propio y entregada junto con el ISA.
+
+**El espacio de opcodes del slot ALU quedó lleno.** `10011` y `11011`, que la Entrega 1 reservaba, los ocupan ahora `SETcc` y `MFPSW`. Incorporar la división en hardware exigiría un prefijo, un segundo nivel de decodificación o quitar otra instrucción, de modo que la rutina deja de ser una solución provisional y pasa a ser la definitiva.
 
 ---
 
@@ -865,18 +910,18 @@ Instrucciones habituales de otras arquitecturas y su construcción en nuestra ar
 | 3 | LSU | S2 | `lsu.sv` | Load/store con y sin postincremento |
 | 4 | Unidad Feistel4 | S3 | `crypto_unit.sv` | Una ronda completa, combinacional |
 | 5 | Controlador de Bóveda | S3 | `key_vault.sv` | 4 × 128 bits, autenticación, KVALID, auto-logout |
-| 6 | ALU corta | S3 | `short_alu.sv` | Dos operandos, destructiva |
+| 6 | ALU corta | S3 | `short_alu.sv` | Dos operandos, destructiva. No escribe banderas |
 | 7 | BRU | S4 | `bru.sv` | Saltos, condicionales, enlace |
 
 ### Tabla de resumen con los tipos de instrucciones y sus operaciones
 
 | Slot | Tipo | Opcode | Mnemónicos incluidos |
 | :--- | :---: | :---: | :--- |
-| S0 (ALU-0) | A / I | `00000` - `11111` | NOP, ADD, SUB, MUL, AND, OR, XOR, SLL, SRL, SRA, ROL, ROR, MOV, NOT, CMP, TEST, NEG, ADDI, SUBI, ANDI, ORI, XORI, SLLI, SRLI, SRAI, ROLI, MOVI, MOVH, CMPI, TESTI |
-| S1 (ALU-1) | A / I | `00000` - `11111` | Misma lista excepto CMP, TEST, CMPI, TESTI que solo son válidas en S0 |
+| S0 (ALU-0) | A / I / U | `00000` - `11111` | NOP, ADD, SUB, MUL, AND, OR, XOR, SLL, SRL, SRA, ROL, ROR, MOV, NOT, CMP, TEST, NEG, ADDI, SUBI, SETcc, ANDI, ORI, XORI, SLLI, SRLI, SRAI, ROLI, MFPSW, MOVI, MOVH, CMPI, TESTI |
+| S1 (ALU-1) | A / I / U | `00000` - `11111` | Misma lista excepto CMP, TEST, CMPI, TESTI, que sólo son válidas en S0 |
 | S2 (LSU) | M | `00000` - `11110` | NOP, LB, LBU, LH, LHU, LW, SB, SH, SW, LW.INC, SW.INC |
 | S3 (Cripto / Bóveda / ALU corta) | F / V / AC | `000` - `110` | F4E, F4D, KSETW, AUTHW, VCTL (LOGIN, LOGOUT, PWSET, KCLR), y las subfunciones de la ALU corta |
-| S4 (BRU) | C / J | `000` - `101` | NOP, BR (EQ, NE, LT), JAL, JR, JALR, HALT. |
+| S4 (BRU) | C / J | `000` - `101` | NOP, BR con los ocho códigos de condición, JAL, JR, JALR, HALT |
 
 ---
 
@@ -898,3 +943,26 @@ Instrucciones habituales de otras arquitecturas y su construcción en nuestra ar
 | 12 | Un delay slot explícito | Vaciado de pipeline | Sin penalización oculta, coherente con la calendarización estática |
 | 13 | Latencia uniforme de 3 bundles | Latencias por unidad | El contrato con CE 1108 cabe en una línea |
 | 14 | Auto-logout por región segura | Watchdog por contador de ciclos | Un contador produce cierres intermitentes difíciles de depurar en testbench |
+| 15 | `SETcc` y `MFPSW` ocupan los dos opcodes que quedaban libres | Dejarlos reservados | Todo operador relacional del lenguaje de CE 1108 produce un booleano asignable, y sin `SETcc` cada uno costaría un salto, una etiqueta y dos `MOVI`. `MFPSW` es la única vía para que el programa consulte la causa de una falla |
+| 16 | El enlace de `JAL` se escribe sólo si el salto se toma | Escribirlo siempre | Escribirlo siempre vuelve destructivo un `JAL` condicional: pisaría la dirección de retorno del llamador sin haber llamado a nada |
+| 17 | La LSU detecta `MISALIGN` y `RANGE` | Dejar el acceso desalineado como comportamiento indefinido | Sin la comprobación, un `SW` desalineado escribe en silencio sobre la palabra alineada vecina y corrompe datos ajenos. El enunciado exige la excepción o el error de acceso |
+| 18 | Las unarias de la ALU corta no llevan segundo operando | `not.s rd, rs` con semántica `rd ← ~rs` | El formato es destructivo y `rd` ya es fuente; un campo de registro que la operación ignora es una invitación a escribir código que parece hacer algo y no lo hace |
+
+---
+
+## 14. Registro de cambios
+
+### v1.1
+
+Cambios posteriores al congelamiento de la Entrega 1. Según la sección 6.1 del enunciado, deben comunicarse formalmente al grupo de contraparte de CE 1108.
+
+| Cambio | Alcance | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| `SETcc` pasa de reservado a definido en el opcode `10011` | Slot ALU | Sí, agrega una instrucción |
+| `MFPSW` pasa de reservado a definido en el opcode `11011` | Slot ALU | Sí, agrega una instrucción |
+| Se fija el campo `widx` de `AUTHW` en `[10:9]`, con `[12:11]` reservado | Slot criptográfico | Sí, fija una codificación que antes no estaba escrita |
+| El enlace de `JAL` y `JALR` se escribe sólo si el salto se toma | Slot BRU | No cambia la codificación, sí la semántica |
+| La LSU registra `MISALIGN` y `RANGE`, y `ILLOP` sobre los opcodes reservados | Slot LSU | No, pero el código generado debe respetar la alineación natural |
+| Las unarias de la ALU corta pierden el segundo operando | Slot criptográfico | Sí, su campo de registro fuente debe ir en cero |
+
+Ninguno de los cambios altera el formato del bundle, el ancho de los slots, las latencias ni el delay slot.

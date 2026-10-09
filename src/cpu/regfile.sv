@@ -8,12 +8,16 @@
 //   - 9 puertos de lectura y 7 puertos de escritura, que es lo máximo que un
 //     bundle de 5 slots puede pedir en un mismo ciclo.
 //
-// Temporización (convención del curso: leer en posedge, escribir en negedge):
-//   - ESCRITURA en el flanco NEGATIVO del reloj.
-//   - LECTURA combinacional; el registro de segmentación ID/EX la captura en el
-//     flanco POSITIVO. Así, un valor que WB escribe a mitad de ciclo ya es
-//     visible para ID antes del siguiente posedge: con eso se cumple la
-//     latencia uniforme de 3 bundles del ISA sin forwarding.
+// Temporización (isa.md sec. 9.2: "escritura en el primer semiciclo y lectura
+// en el segundo"):
+//   - ESCRITURA en el flanco POSITIVO del reloj (inicio del ciclo).
+//   - LECTURA en el flanco NEGATIVO del reloj (mitad del ciclo): el valor
+//     leído queda guardado en read_register_value y el registro de
+//     segmentación ID/EX lo captura en el siguiente posedge.
+//   Un valor que WB escribe al inicio de un ciclo ya lo lee ID a la mitad de
+//   ese mismo ciclo. Así se cumple la latencia uniforme de 3 bundles del ISA
+//   sin forwarding. Los índices de lectura deben estar estables antes del
+//   negedge (el decode tiene medio ciclo para generarlos).
 //
 // Asignación de puertos (sugerida para top/dispatch; este módulo no la impone).
 // El número de puerto de escritura ES su prioridad: 0 = prioridad máxima.
@@ -49,15 +53,15 @@ module regfile #(
     localparam int REGISTER_INDEX_WIDTH = $clog2(NUM_REGISTERS)  // bits para nombrar un registro (4)
 )(
     input  logic clk,
-    input  logic reset_n,   // reset síncrono, activo en bajo (actúa en el negedge)
+    input  logic reset_n,   // reset síncrono, activo en bajo (actúa en el posedge)
 
-    // ---- Lectura (combinacional) -------------------------------------------
+    // ---- Lectura (flanco negativo) -----------------------------------------
     // read_register_index[p] : qué registro lee el puerto de lectura p
-    // read_register_value[p] : valor actual de ese registro
+    // read_register_value[p] : valor de ese registro leído en el último negedge
     input  logic [NUM_READ_PORTS-1:0][REGISTER_INDEX_WIDTH-1:0]  read_register_index,
     output logic [NUM_READ_PORTS-1:0][REGISTER_WIDTH-1:0]        read_register_value,
 
-    // ---- Escritura (flanco negativo) ---------------------------------------
+    // ---- Escritura (flanco positivo) ---------------------------------------
     // write_enable[p]         : 1 = el puerto de escritura p escribe este ciclo
     // write_register_index[p] : a qué registro escribe
     // write_value[p]          : qué valor escribe
@@ -76,16 +80,21 @@ module regfile #(
     logic [REGISTER_WIDTH-1:0] register_storage [0:NUM_REGISTERS-1];
 
     // -------------------------------------------------------------------------
-    // Lectura combinacional: un multiplexor 16 a 1 por puerto de lectura.
-    // El registro de segmentación ID/EX captura estos valores en el posedge.
+    // Lectura en el flanco negativo: cada puerto guarda el valor del registro
+    // que indica read_register_index. El valor queda estable hasta el próximo
+    // negedge, así que el registro ID/EX lo captura sin problema en el posedge.
+    // En reset las salidas de lectura se ponen en cero para no propagar X.
     // -------------------------------------------------------------------------
-    genvar read_port;
-    generate
-        for (read_port = 0; read_port < NUM_READ_PORTS; read_port++) begin : g_read_ports
-            assign read_register_value[read_port] =
-                register_storage[read_register_index[read_port]];
+    integer read_port;
+    always_ff @(negedge clk) begin
+        if (!reset_n) begin
+            for (read_port = 0; read_port < NUM_READ_PORTS; read_port++)
+                read_register_value[read_port] <= '0;
+        end else begin
+            for (read_port = 0; read_port < NUM_READ_PORTS; read_port++)
+                read_register_value[read_port] <= register_storage[read_register_index[read_port]];
         end
-    endgenerate
+    end
 
     // Copia directa de los 16 registros para que los testbenches los revisen
     // sin gastar puertos de lectura.
@@ -97,7 +106,7 @@ module regfile #(
     endgenerate
 
     // -------------------------------------------------------------------------
-    // Escritura en el flanco negativo, con prioridad por número de puerto.
+    // Escritura en el flanco positivo, con prioridad por número de puerto.
     //
     // Los puertos se recorren del de MENOR prioridad (el último) al de MAYOR
     // prioridad (el 0). Con asignaciones no bloqueantes (<=), si un mismo
@@ -106,7 +115,7 @@ module regfile #(
     // -------------------------------------------------------------------------
     integer write_port;
     integer register_to_clear;
-    always_ff @(negedge clk) begin
+    always_ff @(posedge clk) begin
         if (!reset_n) begin
             for (register_to_clear = 0; register_to_clear < NUM_REGISTERS; register_to_clear++)
                 register_storage[register_to_clear] <= '0;
