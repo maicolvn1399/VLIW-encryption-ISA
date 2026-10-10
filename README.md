@@ -38,6 +38,8 @@ reenvía resultados y no se detiene nunca.
 | — | Banco de registros, 9 lecturas y 7 escrituras | `regfile.sv` |
 | — | Memoria de instrucciones, 2048 bundles de 128 bits | `imem.sv` |
 | — | Memoria de datos, 64 KB con escritura por carril | `dmem.sv` |
+| — | Etapa ID: rebanado del bundle y enrutado de lecturas | `dispatch.sv` |
+| — | PSW y resolución de fallas | `psw_fault_unit.sv` |
 
 Las tres unidades de S3 se excluyen entre sí: el opcode del slot decide cuál
 actúa. O el programa cifra, o usa la ALU corta.
@@ -70,8 +72,8 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # compila y ejecuta los once testbenches
-make lint       # análisis estático de las nueve unidades
+make            # compila y ejecuta los catorce testbenches
+make lint       # análisis estático de las once unidades
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
 make list       # lista las unidades disponibles
@@ -115,13 +117,16 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `regfile` | 90 | Los 7 puertos de escritura y los 9 de lectura, prioridad ante colisión, y la lectura del negedge sobre la escritura del posedge |
 | `imem` | 23 | Lectura síncrona, escalado del índice, bundle nulo fuera de rango, carga por `$readmemh` |
 | `dmem` | 38 | Las ocho máscaras de byte con dato replicado, los dos flancos por separado, little-endian, fuera de rango sin envolver |
+| `dispatch` | 34 | Los 128 bits del bundle caen en su slot y su posición, enrutado de los 9 puertos de lectura, la excepción de `MOVH`, las 8 codificaciones de par |
+| `psw_fault_unit` | 41 | Las 16 combinaciones de banderas, las 6 causas en los 5 slots, los 10 pares de prioridad, `EXC` pegajoso, `WCONF` puerto por puerto |
 | `crypto_vault` | 90 | **Integración**: bóveda y unidad de ronda juntas, contra el modelo de referencia |
 | `latency` | 3 | **Integración**: mide la latencia expuesta contra el modelo de pipeline y la compara con los 3 bundles del ISA |
-| **Total** | **1403** | |
+| `wconf` | 12 | **Integración**: 4000 vectores aleatorios comparando los dos detectores de conflicto de escritura, el del banco y el del PSW |
+| **Total** | **1490** | |
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los once aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los catorce aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -152,12 +157,15 @@ cerbero/
     │   ├── short_alu.sv         S3, ALU corta
     │   ├── bru.sv               S4
     │   ├── imem.sv              Memoria de instrucciones
-    │   └── dmem.sv              Memoria de datos
+    │   ├── dmem.sv              Memoria de datos
+    │   ├── dispatch.sv          Etapa ID
+    │   └── psw_fault_unit.sv    PSW y unidad de fallas
     └── tb/
         ├── key_vault_model.sv   Modelo de bóveda para probar crypto_unit sola
         ├── tb_<unidad>.sv       Un testbench por unidad
         ├── tb_crypto_vault.sv   Cosimulación de bóveda y ronda
         ├── tb_latency.sv        Medición de la latencia expuesta
+        ├── tb_wconf.sv          Cosimulación de los dos detectores de WCONF
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -166,7 +174,7 @@ cerbero/
 
 Única fuente de verdad para los números del ISA: anchos, posiciones de campo,
 opcodes de los cinco slots, códigos de condición, bits del PSW y causas de
-falla. Lo incluyen los nueve módulos y los testbenches, de modo que renumerar un
+falla. Lo incluyen los once módulos y los testbenches, de modo que renumerar un
 opcode se hace en una línea y el RTL y las pruebas quedan sincronizados. Si
 estuviera escrito a mano en cada archivo, un testbench podría quedar probando
 una codificación que el módulo ya no implementa, y ambos "pasarían".
@@ -196,6 +204,15 @@ agregar el nombre a `NO_RTL`.
 - **Anular y marcar.** Una falla anula la operación de su slot y deja la causa en
   el PSW. El pipeline no se detiene ni se vacía. La operación nula nunca falla,
   ni siquiera por los campos que no usa.
+- **Cada falla se detecta en un solo sitio.** `ILLOP`, `MISALIGN`, `RANGE`,
+  `DENIED` y `NOKEY` los detecta la unidad que ejecuta la operación, porque de
+  todas formas necesita saberlo para anular su propio resultado; `psw_fault_unit`
+  las recibe y resuelve la prioridad entre slots. `WCONF` es la excepción: no
+  pertenece a ninguna unidad, así que lo detecta el PSW a partir de los
+  habilitadores de escritura reales. La etapa ID no detecta ninguna de las dos
+  cosas, y la cabecera de `dispatch.sv` explica por qué: `ILLOP` sería una
+  segunda copia de la tabla de campos reservados, y `WCONF` allí es imposible
+  porque depende de si cada slot escribe de verdad, que se resuelve en EX.
 - **Combinacional.** Ninguna unidad funcional registra su resultado, salvo la
   bóveda, que tiene estado propio. El reparto por etapas vive en el datapath,
   que es quien debe respetar la latencia de 3 bundles. Las memorias y el banco
@@ -233,7 +250,8 @@ agregar el nombre a `NO_RTL`.
 | Integración bóveda + ronda | Completa |
 | `regfile.sv` | Completo y verificado |
 | Memorias `imem.sv` y `dmem.sv` | Completas y verificadas |
-| Datapath: `fetch`, `dispatch`, `psw`, `wb_arbiter` | Pendiente |
+| `dispatch.sv` y `psw_fault_unit.sv` | Completos y verificados |
+| Datapath: `fetch` y contador de programa | Pendiente |
 | Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |
 | `load_file.py` y `extract_data.py` | Pendiente |

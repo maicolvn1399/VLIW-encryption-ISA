@@ -47,8 +47,14 @@
 //   - Se cumple la prioridad del ISA S0 > S1 > S2 > S3 > S4.
 //   - En LW.INC con rd == rbase gana el dato cargado (puerto 2 antes que 3),
 //     como pide isa.md sección 4.
-// La salida `write_conflict_detected` solo avisa; la detección oficial de
-// WCONF para el PSW se hace en la etapa ID (dispatch).
+// La salida `write_conflict_detected` solo avisa. La detección que llega al PSW
+// la hace `psw_fault_unit.sv`, a partir de estos mismos habilitadores, con una
+// diferencia deliberada: WCONF es una condición ENTRE slots, así que allá no se
+// comparan los dos puertos del slot S2 entre sí (LW.INC con rd == rbase, que el
+// ISA define y no es falla) ni las dos mitades del par en S3. Esta salida sí los
+// incluye, porque aquí la pregunta es "hubo dos escrituras al mismo registro" y
+// no "hubo un conflicto reportable". `tb_wconf.sv` comprueba que las dos
+// implementaciones coinciden salvo exactamente por esos dos pares.
 //
 // Escrituras anuladas: si un slot falló, quien arma el bundle pone en 0 el
 // `write_enable` de ese puerto. Este módulo no sabe nada de fallas.

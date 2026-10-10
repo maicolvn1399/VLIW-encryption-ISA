@@ -966,3 +966,19 @@ Cambios posteriores al congelamiento de la Entrega 1. Según la sección 6.1 del
 | Las unarias de la ALU corta pierden el segundo operando | Slot criptográfico | Sí, su campo de registro fuente debe ir en cero |
 
 Ninguno de los cambios altera el formato del bundle, el ancho de los slots, las latencias ni el delay slot.
+
+### v1.2
+
+Precisiones sobre el PSW que surgieron al implementar la unidad de fallos. No cambian ninguna codificación, pero sí lo que el programa observa al consultar el registro, así que entran en la misma comunicación formal.
+
+| Cambio | Alcance | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| `EXC` y `CAUSE` guardan la **primera** falla y quedan congelados; sólo el reset los limpia | PSW | No, pero cambia cómo se lee el resultado |
+| `WCONF` se detecta sobre los habilitadores de escritura reales, no sobre los opcodes | PSW | No |
+| Dos escrituras del **mismo** slot no son `WCONF` | PSW | No |
+
+Las tres se siguen de lo que la sección 1.2 ya decía y conviene dejarlas escritas:
+
+- **La primera falla manda.** La sección 1.2 dice que «`EXC` se marca solo una vez» y que el PSW no es escribible directamente. En consecuencia los dos campos son pegajosos y la causa que queda es la de la primera falla, no la de la última. Guardar la primera es lo útil para depurar, porque una falla suele arrastrar otras y la última casi siempre es una consecuencia. Para distinguir varias fallas, el patrón es consultar `MFPSW` después de cada tramo corto de código.
+- **`WCONF` no se puede detectar en la etapa de decodificación.** Depende de si cada slot escribe de verdad, y eso se resuelve en ejecución: `S4` escribe el enlace sólo si el salto se toma, `S2` no escribe si la dirección sale desalineada o fuera de rango, y `S3` no escribe el par si la bóveda no da permiso. Un detector que trabaje sólo sobre los opcodes tiene que suponer que todo slot con opcode de escritura va a escribir, y reportaría `WCONF` en bundles que nunca llegan a chocar.
+- **`WCONF` es una condición entre slots.** El slot `S2` escribe dos veces en `LW.INC`, el destino y el registro base, y la sección 4 ya define quién gana cuando coinciden: el dato cargado. Eso es comportamiento definido y no es falla. Lo mismo para las dos mitades del par en `S3`, que además nunca pueden ser el mismo registro.
