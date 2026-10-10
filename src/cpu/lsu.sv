@@ -204,8 +204,15 @@ module lsu #(
   // empieza dentro del rango termina dentro del rango.
   // ---------------------------------------------------------------------------
 
+  // La comparacion contra el limite inferior es constantemente falsa mientras
+  // DMEM_BASE valga cero, y el analisis estatico lo senala. Se conserva igual
+  // porque el modulo esta parametrizado: con una base distinta de cero la
+  // comparacion se vuelve real, y quitarla dejaria un agujero que solo
+  // aparece el dia que alguien mueva la memoria.
   logic out_of_range;
+  /* verilator lint_off UNSIGNED */
   assign out_of_range = (eff_addr < DMEM_BASE) || (eff_addr > DMEM_LIMIT);
+  /* verilator lint_on UNSIGNED */
 
   // ---------------------------------------------------------------------------
   // Falla
@@ -248,21 +255,28 @@ module lsu #(
   // ---------------------------------------------------------------------------
   // Escritura en memoria
   //
-  // El dato se corre hacia el carril que le toca dentro de la palabra y la
-  // mascara de bytes marca cual. El corrimiento se arma por concatenacion en
-  // vez de multiplicar por ocho: deja explicito que son tres bits de
-  // corrimiento cableados.
+  // El dato se REPLICA en los cuatro carriles de la palabra y la mascara de
+  // bytes decide cual se escribe de verdad. Es mas barato que correr el dato
+  // hacia su carril: replicar es cableado, mientras que correrlo por una
+  // cantidad que depende de la direccion exige un desplazador de barril de 32
+  // bits, que ademas deja la mitad de su salida sin usar.
+  //
+  // CONTRATO CON dmem.sv: la memoria DEBE escribir unicamente los carriles
+  // marcados en byte_enable. Los demas traen una copia del dato, no ceros, y
+  // escribirlos corromperia los bytes vecinos. Una memoria que ignore la
+  // mascara va a parecer que funciona con SW, donde la mascara vale 1111, y
+  // va a corromper datos en el primer SB.
   // ---------------------------------------------------------------------------
 
-  logic [4:0] shift_amt;
-  logic [3:0] be_byte;
-  logic [3:0] be_half;
-  logic [31:0] data_shifted;
+  logic [3:0]  be_byte;
+  logic [3:0]  be_half;
+  logic [31:0] data_byte;
+  logic [31:0] data_half;
 
-  assign shift_amt    = {addr_lo, 3'b000};
-  assign be_byte      = 4'b0001 << addr_lo;
-  assign be_half      = 4'b0011 << addr_lo;
-  assign data_shifted = rs_data_val << shift_amt;
+  assign be_byte   = 4'b0001 << addr_lo;
+  assign be_half   = 4'b0011 << addr_lo;
+  assign data_byte = {4{rs_data_val[7:0]}};
+  assign data_half = {2{rs_data_val[15:0]}};
 
   assign mem_we = exec && is_st;
 
@@ -274,11 +288,11 @@ module lsu #(
       case (tam)
         `LSU_TAM_B : begin
           byte_enable    = be_byte;
-          mem_write_data = data_shifted;
+          mem_write_data = data_byte;
         end
         `LSU_TAM_H : begin
           byte_enable    = be_half;
-          mem_write_data = data_shifted;
+          mem_write_data = data_half;
         end
         `LSU_TAM_W : begin
           byte_enable    = 4'b1111;
@@ -295,19 +309,43 @@ module lsu #(
   // ---------------------------------------------------------------------------
   // Lectura desde memoria
   //
-  // El dato llega como palabra completa; la unidad extrae el carril y lo
-  // extiende con signo o con ceros segun el bit U del opcode.
+  // El dato llega como palabra completa y la unidad SELECCIONA el carril con
+  // un multiplexor, en vez de correr la palabra entera hacia la derecha. Por
+  // el mismo motivo que en la escritura: el multiplexor es de cuatro a uno
+  // sobre ocho bits, y el desplazador seria de 32 bits con la mitad de la
+  // salida descartada.
   // ---------------------------------------------------------------------------
 
-  logic [31:0] read_aligned;
   logic [7:0]  raw_byte;
   logic [15:0] raw_half;
   logic [31:0] byte_ext;
   logic [31:0] half_ext;
 
-  assign read_aligned = mem_read_data >> shift_amt;
-  assign raw_byte     = read_aligned[7:0];
-  assign raw_half     = read_aligned[15:0];
+  // Los carriles se recortan con asignaciones continuas y no dentro del
+  // always_comb: Icarus Verilog no infiere sensibilidad sobre recortes
+  // constantes dentro de un proceso y emite un aviso por cada uno.
+  logic [7:0]  byte_lane0, byte_lane1, byte_lane2, byte_lane3;
+  logic [15:0] half_lane0, half_lane1;
+
+  assign byte_lane0 = mem_read_data[7:0];
+  assign byte_lane1 = mem_read_data[15:8];
+  assign byte_lane2 = mem_read_data[23:16];
+  assign byte_lane3 = mem_read_data[31:24];
+  assign half_lane0 = mem_read_data[15:0];
+  assign half_lane1 = mem_read_data[31:16];
+
+  always_comb begin
+    case (addr_lo)
+      2'b00  : raw_byte = byte_lane0;
+      2'b01  : raw_byte = byte_lane1;
+      2'b10  : raw_byte = byte_lane2;
+      default: raw_byte = byte_lane3;
+    endcase
+  end
+
+  // La media palabra solo tiene dos carriles posibles, y el bit 0 de la
+  // direccion ya quedo descartado por la comprobacion de alineacion.
+  assign raw_half = addr_lo[1] ? half_lane1 : half_lane0;
 
   assign byte_ext = is_unsigned ? {24'd0, raw_byte}
                                 : {{24{raw_byte[7]}},  raw_byte};

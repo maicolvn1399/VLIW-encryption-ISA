@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // =============================================================================
 // regfile.sv  -  Banco de registros de CERBERO
 // CE-4301 Arquitectura de Computadores I - Proyecto Grupal I - Grupo #4
@@ -19,8 +21,15 @@
 //   sin forwarding. Los índices de lectura deben estar estables antes del
 //   negedge (el decode tiene medio ciclo para generarlos).
 //
-// Asignación de puertos (sugerida para top/dispatch; este módulo no la impone).
-// El número de puerto de escritura ES su prioridad: 0 = prioridad máxima.
+// Asignación de puertos. El módulo es genérico y no la impone, pero NO es
+// libre: el número de puerto de escritura ES su prioridad, y la prioridad que
+// fija el ISA es por slot (S0 > S1 > S2 > S3 > S4). Cablear S4 al puerto 0
+// daría la prioridad al revés.
+//
+// Por eso la asignación canónica vive en cerbero_defs.svh con nombre propio
+// (`RP_S0_A, `WP_S2_BASE, ...), y top.sv y dispatch.sv deben usar esas
+// constantes en lugar de números sueltos. La tabla de abajo es la misma, aquí
+// para poder leer el módulo sin cambiar de archivo.
 //
 //   Puerto de lectura                  Puerto de escritura
 //   0  S0  rs1                         0  S0  rd

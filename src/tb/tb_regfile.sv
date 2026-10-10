@@ -310,6 +310,16 @@ module tb_regfile;
         else
             $display(" FAIL  regfile: %0d errores de %0d verificaciones", total_failures, total_checks);
         $display("==================================================");
+`ifdef FORCE_FAIL
+        // Un testbench que siempre pasa no prueba nada. Compilar con
+        // -DFORCE_FAIL inyecta un caso deliberadamente incorrecto para
+        // comprobar que el arnés sabe reportar una falla.
+        begin_test("FF", "Autoprueba del arnes");
+        stim = "caso deliberadamente incorrecto";
+        check("autoprueba del arnes", 32'h0000_0000, 32'hFFFF_FFFF);
+        end_test();
+`endif
+
         if (total_failures != 0) $fatal(1, "tb_regfile: hubo errores");
         $finish;
     end

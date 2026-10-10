@@ -281,6 +281,51 @@
 `define CAUSE_NOKEY    3'b101
 `define CAUSE_WCONF    3'b110
 
+//==============================================================================
+// BANCO DE REGISTROS
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// Puertos de lectura
+//
+// Nueve en total, repartidos segun lo que cada slot necesita leer. Las tres
+// unidades de S3 comparten los dos mismos puertos porque se excluyen entre si:
+// o el bundle trae una ronda de cifrado, o una operacion de boveda, o una de
+// la ALU corta, nunca dos a la vez.
+//------------------------------------------------------------------------------
+`define RP_S0_A  0   // ALU-0: rs1, o rd en MOVH
+`define RP_S0_B  1   // ALU-0: rs2
+`define RP_S1_A  2   // ALU-1: rs1, o rd en MOVH
+`define RP_S1_B  3   // ALU-1: rs2
+`define RP_S2_A  4   // LSU:   rbase
+`define RP_S2_B  5   // LSU:   rs_dato de un store
+`define RP_S3_A  6   // S3:    mitad L del par, o rd de la ALU corta
+`define RP_S3_B  7   // S3:    mitad R del par, o rs2 de la ALU corta
+`define RP_S4    8   // BRU:   rs de JR y JALR
+
+`define NREAD_PORTS 9
+
+//------------------------------------------------------------------------------
+// Puertos de escritura
+//
+// Siete en total. EL ORDEN ES LA PRIORIDAD: el indice mas bajo gana, que es la
+// regla S0 > S1 > S2 > S3 > S4 que fija el ISA para WCONF. Reordenar estas
+// constantes cambia el comportamiento del procesador.
+//
+// S2 escribe dos veces porque el postincremento actualiza el registro base
+// ademas del destino; S3 tambien, porque una ronda reescribe las dos mitades
+// del par.
+//------------------------------------------------------------------------------
+`define WP_S0       0   // ALU-0: rd
+`define WP_S1       1   // ALU-1: rd
+`define WP_S2_RD    2   // LSU:   destino de un load
+`define WP_S2_BASE  3   // LSU:   registro base de una variante .INC
+`define WP_S3_L     4   // S3:    mitad L del par, o rd de la ALU corta
+`define WP_S3_R     5   // S3:    mitad R del par
+`define WP_S4_LINK  6   // BRU:   enlace de retorno, siempre R15
+
+`define NWRITE_PORTS 7
+
 //------------------------------------------------------------------------------
 // Mapa de memoria de datos (isa.md 1.4)
 //

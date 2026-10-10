@@ -150,6 +150,23 @@ module tb_lsu;
   endfunction
 
   // ---------------------------------------------------------------------------
+  // Carriles habilitados de un almacenamiento
+  //
+  // La unidad replica el dato en los cuatro carriles y deja que la mascara
+  // decida cual se escribe. Comparar la palabra entera ataria la prueba a esa
+  // decision; comparar solo los carriles habilitados comprueba lo unico que
+  // de verdad importa, que es lo que la memoria va a escribir.
+  // ---------------------------------------------------------------------------
+
+  function automatic logic [31:0] enmascarar(input logic [31:0] d,
+                                             input logic [3:0]  be);
+    enmascarar = { be[3] ? d[31:24] : 8'd0,
+                   be[2] ? d[23:16] : 8'd0,
+                   be[1] ? d[15:8]  : 8'd0,
+                   be[0] ? d[7:0]   : 8'd0 };
+  endfunction
+
+  // ---------------------------------------------------------------------------
   // Aplicacion de estimulo. El modulo es combinacional, basta un retardo.
   // ---------------------------------------------------------------------------
 
@@ -198,7 +215,8 @@ module tb_lsu;
       aplicar(mk_m(op, 4'd1, 4'd2, imm), base, dato, 32'd0);
       check32({nombre, ": direccion"},         eff_addr,       ea_esp);
       check4 ({nombre, ": mascara de bytes"},  byte_enable,    be_esp);
-      check32({nombre, ": dato alineado"},     mem_write_data, wdato_esp);
+      check32({nombre, ": carriles habilitados"},
+              enmascarar(mem_write_data, byte_enable), wdato_esp);
       check1 ({nombre, ": escribe memoria"},   mem_we,         1'b1);
       check1 ({nombre, ": no escribe rd"},     rd_write_en,    1'b0);
       check1 ({nombre, ": sin falla"},         fault,          1'b0);
@@ -331,6 +349,24 @@ module tb_lsu;
     check_store("SB carril 3", `LSU_SB,
                 32'h0000_1003, 19'd0, 32'h0000_00EF,
                 32'h0000_1003, 4'b1000, 32'hEF00_0000);
+
+    // ------------------------------------------------------------------------
+    $display("[el dato se replica en los cuatro carriles]");
+    // ------------------------------------------------------------------------
+    // La unidad no corre el dato hacia su carril: lo replica y deja que la
+    // mascara elija. El caso lo fija porque es un contrato con dmem.sv, que
+    // DEBE honrar byte_enable. Una memoria que lo ignore va a parecer correcta
+    // con SW, donde la mascara vale 1111, y va a corromper los bytes vecinos
+    // en el primer SB.
+    aplicar(mk_m(`LSU_SB, 4'd1, 4'd2, 19'd0), 32'h0000_1001, 32'h0000_00EF,
+            32'd0);
+    check32("SB replica el byte en la palabra", mem_write_data, 32'hEFEF_EFEF);
+    check4 ("y solo habilita su carril",        byte_enable,    4'b0010);
+
+    aplicar(mk_m(`LSU_SH, 4'd1, 4'd2, 19'd0), 32'h0000_1002, 32'h0000_BEEF,
+            32'd0);
+    check32("SH replica la media palabra", mem_write_data, 32'hBEEF_BEEF);
+    check4 ("y habilita los dos carriles altos", byte_enable, 4'b1100);
 
     // ------------------------------------------------------------------------
     $display("[postincremento: la direccion es la base pura]");

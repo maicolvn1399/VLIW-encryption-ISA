@@ -22,8 +22,19 @@
 `include "cerbero_defs.svh"
 
 module crypto_unit (
-    // Slot S3 crudo, bits 31:16 del bundle
+    // Slot S3 crudo, bits 31:16 del bundle.
+    //
+    // La unidad solo mira el opcode y el campo de par. Los campos de llave y
+    // de ronda los decodifica key_vault.sv, que es quien selecciona la
+    // subllave, y los bits reservados los verifica la misma boveda. De ahi
+    // que slot[9:0] quede sin usar en este modulo.
+    //
+    // La exencion de lint es deliberada y no un descuido: decodificar aqui
+    // esos campos crearia una segunda copia de la seleccion de subllave,
+    // capaz de divergir de la de la boveda.
+    /* verilator lint_off UNUSEDSIGNAL */
     input  logic [15:0] slot,
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // Permiso y subllave, ambos desde key_vault
     input  logic        grant,
