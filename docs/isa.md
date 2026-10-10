@@ -782,34 +782,32 @@ Archivo de texto con un bundle por línea, 32 dígitos hexadecimales sin prefijo
 
 ### 10.5 Ejemplo completo de codificación de un bundle (128 bits)
 
-Para mostrar el mapeo directo entre la sintaxis del ensamblador y la representación final en memoria (128 bits / 32 dígitos hexadecimales), se presenta el siguiente bundle de ejemplo ejecutando las 5 unidades en paralelo:
+Para mostrar el mapeo directo entre la sintaxis del ensamblador y la representación final en memoria (128 bits / 32 dígitos hexadecimales), se presenta el siguiente bundle de ejemplo ejecutando las 5 unidades en paralelo sin generar conflictos de escritura:
 
 **Línea de instrucción VLIW en ensamblador:**
 
-```
-addi r1, r1, #4 | nop | lw.inc r2, #0(r0) | f4e p0, k0, #0 | nop ;
-```
+`addi r10, r10, #4 | nop | lw.inc r12, #0(r14) | f4e p0, k0, #0 | nop ;`
 
 **Desglose de campos en binario por slot:**
 
-1. **Slot S0 [127:96] (ALU-0 – 32 bits):** `addi r1, r1, #4`
+1. **Slot S0 [127:96] (ALU-0 – 32 bits):** `addi r10, r10, #4`
    - Opcode (31:27): `10001` (ADDI)
-   - rd (26:23): `0001` (r1)
-   - rs1 (22:19): `0001` (r1)
+   - rd (26:23): `1010` (r10)
+   - rs1 (22:19): `1010` (r10)
    - imm19 (18:0): `0000000000000000100` (#4)
-   - Binario: `1000 1000 0001 0001 0000 0000 0000 0100` → `0x88110004`
+   - Binario: `1000 1101 0101 0000 0000 0000 0000 0100` → `0x8D500004`
 
 2. **Slot S1 [95:64] (ALU-1 – 32 bits):** `nop`
-   - Opcode (31:27): `0000` (NOP)
+   - Opcode (31:27): `00000` (NOP)
    - Reservado (26:0): `000000000000000000000000000`
    - Binario: `0000 0000 0000 0000 0000 0000 0000 0000` → `0x00000000`
 
-3. **Slot S2 [63:32] (LSU – 32 bits):** `lw.inc r2, #0(r0)`
+3. **Slot S2 [63:32] (LSU – 32 bits):** `lw.inc r12, #0(r14)`
    - Opcode (31:27): `10110` (LW.INC)
-   - rd (26:23): `0010` (r2)
-   - rbase (22:19): `0000` (r0)
+   - rd (26:23): `1100` (r12)
+   - rbase (22:19): `1110` (r14)
    - imm19 (18:0): `0000000000000000000` (#0)
-   - Binario: `1011 0001 0000 0000 0000 0000 0000 0000` → `0xB1000000`
+   - Binario: `1011 0110 0111 0000 0000 0000 0000 0000` → `0xB6700000`
 
 4. **Slot S3 [31:16] (Cripto/Bóveda – 16 bits):** `f4e p0, k0, #0`
    - Opcode (15:13): `001` (F4E)
@@ -824,11 +822,9 @@ addi r1, r1, #4 | nop | lw.inc r2, #0(r0) | f4e p0, k0, #0 | nop ;
    - Reservado (12:0): `0000000000000`
    - Binario: `0000 0000 0000 0000 0000` → `0x0000`
 
-**Resultado en memoria, hexadecimal de 128 bits (32 digitos para `$readmemh` (Verilog)):**
+**Resultado en memoria, hexadecimal de 128 bits (32 dígitos para `$readmemh` en Verilog):**
 
-```
-8811000400000000B100000020000000
-```
+`8D50000400000000B670000020000000`
 
 ---
 
