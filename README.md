@@ -40,6 +40,7 @@ reenvía resultados y no se detiene nunca.
 | — | Memoria de datos, 64 KB con escritura por carril | `dmem.sv` |
 | — | Etapa ID: rebanado del bundle y enrutado de lecturas | `dispatch.sv` |
 | — | PSW y resolución de fallas | `psw_fault_unit.sv` |
+| — | Etapa IF: contador de programa, salto y detención | `fetch.sv` |
 | — | Frontera IF/ID: el PC que acompaña al bundle | `reg_if_id.sv` |
 | — | Frontera ID/EX: slots y los 9 valores leídos | `reg_id_ex.sv` |
 | — | Frontera EX/MEM: los 7 puertos de escritura y las 5 fallas | `reg_ex_mem.sv` |
@@ -129,7 +130,9 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `reg_ex_mem` | 10 | Aislamiento de los 10 campos, los 7 puertos de escritura y las 5 causas elemento por elemento |
 | `wconf` | 12 | **Integración**: 4000 vectores aleatorios comparando los dos detectores de conflicto de escritura, el del banco y el del PSW |
 | `pipeline` | 6 | **Integración**: mide la latencia expuesta sobre la cadena real de registros más el banco, y que el PC acompañe al bundle en ID y en EX |
-| **Total** | **1537** | |
+| `fetch` | 41 | Avance de 16 en 16, salto tomado, destino desalineado forzado a múltiplo de 16, `HALT` congela el PC y apaga `valid`, el reset lo libera |
+| `fetch_flow` | 16 | **Integración**: `fetch`, `imem`, `reg_if_id` y `bru` juntos sobre un programa de saltos; exactamente un delay slot por salto y el de `HALT` sí se ejecuta |
+| **Total** | **1594** | |
 
 ### Autoprueba del arnés
 
@@ -167,6 +170,7 @@ cerbero/
     │   ├── dmem.sv              Memoria de datos
     │   ├── dispatch.sv          Etapa ID
     │   ├── psw_fault_unit.sv    PSW y unidad de fallas
+    │   ├── fetch.sv             Etapa IF, contador de programa
     │   ├── reg_if_id.sv         Frontera IF/ID
     │   ├── reg_id_ex.sv         Frontera ID/EX
     │   └── reg_ex_mem.sv        Frontera EX/MEM
@@ -177,6 +181,7 @@ cerbero/
         ├── tb_latency.sv        Medición de la latencia expuesta
         ├── tb_wconf.sv          Cosimulación de los dos detectores de WCONF
         ├── tb_pipeline.sv       Latencia expuesta sobre la cadena de registros
+        ├── tb_fetch_flow.sv     Búsqueda, delay slot y HALT con la BRU real
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -255,6 +260,15 @@ agregar el nombre a `NO_RTL`.
   bundle que haya que descartar. Eso es lo que se compra resolviendo en ID en
   vez de en EX: resolver en EX exigiría dos delay slots, o uno más lógica de
   vaciado en las tres fronteras.
+- **`HALT` también tiene delay slot.** El ISA no dice si `HALT` cuenta como
+  salto; se trata igual. El bundle siguiente ya se está buscando cuando la BRU
+  ve `HALT`, así que se ejecuta, y desde ese flanco el PC queda congelado y
+  `valid` en cero. Los bundles en vuelo terminan normalmente; esperar a que el
+  pipeline se vacíe antes de terminar la simulación le toca a quien observa
+  `halted`. Solo el reset sale de ese estado.
+- **El PC siempre es múltiplo de 16.** `JR` y `JALR` saltan a `R[rs]` tal cual,
+  así que `fetch.sv` borra los cuatro bits bajos del destino. Sin eso `imem`
+  buscaría el bundle correcto, pero la BRU y la bóveda verían un PC distinto.
 - **Compilación limpia.** `iverilog -Wall` y `verilator --lint-only -Wall` sin
   avisos. Conviene correr `make lint` antes de cada commit, no sólo cuando algo
   falla: Verilator detecta anchos inconsistentes, señales no usadas y latches
@@ -275,9 +289,8 @@ agregar el nombre a `NO_RTL`.
 | Memorias `imem.sv` y `dmem.sv` | Completas y verificadas |
 | `dispatch.sv` y `psw_fault_unit.sv` | Completos y verificados |
 | Registros de segmentación | Completos y verificados |
-| `fetch.sv` y contador de programa | Pendiente |
+| `fetch.sv` y contador de programa | Completo y verificado |
 | `top.sv` | Pendiente |
-| Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |
 | `load_file.py` y `extract_data.py` | Pendiente |
 | Subrutina `__divmod32` | Pendiente |
