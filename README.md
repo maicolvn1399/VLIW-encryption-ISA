@@ -40,6 +40,9 @@ reenvía resultados y no se detiene nunca.
 | — | Memoria de datos, 64 KB con escritura por carril | `dmem.sv` |
 | — | Etapa ID: rebanado del bundle y enrutado de lecturas | `dispatch.sv` |
 | — | PSW y resolución de fallas | `psw_fault_unit.sv` |
+| — | Frontera IF/ID: el PC que acompaña al bundle | `reg_if_id.sv` |
+| — | Frontera ID/EX: slots y los 9 valores leídos | `reg_id_ex.sv` |
+| — | Frontera EX/MEM: los 7 puertos de escritura y las 5 fallas | `reg_ex_mem.sv` |
 
 Las tres unidades de S3 se excluyen entre sí: el opcode del slot decide cuál
 actúa. O el programa cifra, o usa la ALU corta.
@@ -72,8 +75,8 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # compila y ejecuta los catorce testbenches
-make lint       # análisis estático de las once unidades
+make            # compila y ejecuta los dieciocho testbenches
+make lint       # análisis estático de las catorce unidades
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
 make list       # lista las unidades disponibles
@@ -121,12 +124,16 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `psw_fault_unit` | 41 | Las 16 combinaciones de banderas, las 6 causas en los 5 slots, los 10 pares de prioridad, `EXC` pegajoso, `WCONF` puerto por puerto |
 | `crypto_vault` | 90 | **Integración**: bóveda y unidad de ronda juntas, contra el modelo de referencia |
 | `latency` | 3 | **Integración**: mide la latencia expuesta contra el modelo de pipeline y la compara con los 3 bundles del ISA |
+| `reg_if_id` | 13 | Retraso de un ciclo exacto medido sobre una secuencia, independencia de `valid` y `pc` |
+| `reg_id_ex` | 18 | Aislamiento de los 12 campos con huella de bits, los 9 puertos de lectura uno por uno |
+| `reg_ex_mem` | 10 | Aislamiento de los 10 campos, los 7 puertos de escritura y las 5 causas elemento por elemento |
 | `wconf` | 12 | **Integración**: 4000 vectores aleatorios comparando los dos detectores de conflicto de escritura, el del banco y el del PSW |
-| **Total** | **1490** | |
+| `pipeline` | 6 | **Integración**: mide la latencia expuesta sobre la cadena real de registros más el banco, y que el PC acompañe al bundle en ID y en EX |
+| **Total** | **1537** | |
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los catorce aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los dieciocho aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -159,13 +166,17 @@ cerbero/
     │   ├── imem.sv              Memoria de instrucciones
     │   ├── dmem.sv              Memoria de datos
     │   ├── dispatch.sv          Etapa ID
-    │   └── psw_fault_unit.sv    PSW y unidad de fallas
+    │   ├── psw_fault_unit.sv    PSW y unidad de fallas
+    │   ├── reg_if_id.sv         Frontera IF/ID
+    │   ├── reg_id_ex.sv         Frontera ID/EX
+    │   └── reg_ex_mem.sv        Frontera EX/MEM
     └── tb/
         ├── key_vault_model.sv   Modelo de bóveda para probar crypto_unit sola
         ├── tb_<unidad>.sv       Un testbench por unidad
         ├── tb_crypto_vault.sv   Cosimulación de bóveda y ronda
         ├── tb_latency.sv        Medición de la latencia expuesta
         ├── tb_wconf.sv          Cosimulación de los dos detectores de WCONF
+        ├── tb_pipeline.sv       Latencia expuesta sobre la cadena de registros
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -174,7 +185,7 @@ cerbero/
 
 Única fuente de verdad para los números del ISA: anchos, posiciones de campo,
 opcodes de los cinco slots, códigos de condición, bits del PSW y causas de
-falla. Lo incluyen los once módulos y los testbenches, de modo que renumerar un
+falla. Lo incluyen los catorce módulos y los testbenches, de modo que renumerar un
 opcode se hace en una línea y el RTL y las pruebas quedan sincronizados. Si
 estuviera escrito a mano en cada archivo, un testbench podría quedar probando
 una codificación que el módulo ya no implementa, y ambos "pasarían".
@@ -232,6 +243,18 @@ agregar el nombre a `NO_RTL`.
   LSU tienen que presentar sus direcciones de forma **combinacional** durante su
   etapa: si llegaran ya registradas, el pipeline entero correría un ciclo y la
   latencia de la carga pasaría de 3 a 4 bundles.
+- **Son tres registros de segmentación, no cuatro.** No hay `reg_mem_wb`: el
+  banco de registros escribe en el flanco que abre WB, así que sus entradas
+  tienen que estar estables durante MEM, que es donde las deja `reg_ex_mem`. Los
+  biestables del banco y los del PSW *son* la frontera MEM/WB. Un registro más
+  delante del banco correría la escritura al ciclo n+5 y la latencia expuesta
+  pasaría a 4 bundles; `make pipeline` lo mide sobre la cadena real.
+- **No hay lógica de vaciado en ninguna frontera.** La BRU resuelve el salto en
+  decodificación, así que el bundle que entra detrás es el delay slot, que el
+  ISA ejecuta siempre, y el destino entra justo después. Nunca se busca un
+  bundle que haya que descartar. Eso es lo que se compra resolviendo en ID en
+  vez de en EX: resolver en EX exigiría dos delay slots, o uno más lógica de
+  vaciado en las tres fronteras.
 - **Compilación limpia.** `iverilog -Wall` y `verilator --lint-only -Wall` sin
   avisos. Conviene correr `make lint` antes de cada commit, no sólo cuando algo
   falla: Verilator detecta anchos inconsistentes, señales no usadas y latches
@@ -251,7 +274,9 @@ agregar el nombre a `NO_RTL`.
 | `regfile.sv` | Completo y verificado |
 | Memorias `imem.sv` y `dmem.sv` | Completas y verificadas |
 | `dispatch.sv` y `psw_fault_unit.sv` | Completos y verificados |
-| Datapath: `fetch` y contador de programa | Pendiente |
+| Registros de segmentación | Completos y verificados |
+| `fetch.sv` y contador de programa | Pendiente |
+| `top.sv` | Pendiente |
 | Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |
 | `load_file.py` y `extract_data.py` | Pendiente |

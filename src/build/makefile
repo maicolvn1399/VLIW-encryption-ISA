@@ -47,11 +47,13 @@ DEPS_crypto_unit  := $(TB)/key_vault_model.sv
 DEPS_crypto_vault := $(CPU)/crypto_unit.sv $(CPU)/key_vault.sv
 DEPS_latency      := $(CPU)/regfile.sv
 DEPS_wconf        := $(CPU)/psw_fault_unit.sv $(CPU)/regfile.sv
+DEPS_pipeline     := $(CPU)/reg_if_id.sv $(CPU)/reg_id_ex.sv \
+                     $(CPU)/reg_ex_mem.sv $(CPU)/regfile.sv
 # DEPS_top        := $(filter-out $(PKGS),$(wildcard $(CPU)/*.sv))
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
-NO_RTL := crypto_vault latency wconf
+NO_RTL := crypto_vault latency wconf pipeline
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
