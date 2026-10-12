@@ -84,7 +84,11 @@ def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None,
           len(hardware) == pal[0], f"{len(hardware)} contra {pal[0]}")
     check("y coincide byte por byte con el modelo de referencia",
           hardware == modelo,
-          f"hardware {hardware[:64]!r}\nmodelo   {modelo[:64]!r}")
+          f"hardware {hardware[:64]!r}\nmodelo   {modelo[:64]!r}\n"
+          f"Si el procesador termino sin fallas en su PSW, descifro con OTRA "
+          f"LLAVE\nque la del modelo, {formato(llave)}.\n"
+          f"La llave de cargar_llave.s (r5 a r8) y la de LLAVE= tienen que "
+          f"ser la misma.")
 
     if ruta_original is not None:
         original = Path(ruta_original).read_bytes()

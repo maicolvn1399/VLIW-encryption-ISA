@@ -164,7 +164,11 @@ def main(volcado, ruta_original=ORIGINAL, llave=LLAVE_POR_OMISION,
     check("y cifra bloque por bloque lo mismo que el hardware",
           pal == esperado,
           f"hardware {a_contenedor(pal)[:64].hex()}\n"
-          f"modelo   {a_contenedor(esperado)[:64].hex()}")
+          f"modelo   {a_contenedor(esperado)[:64].hex()}\n"
+          f"Si el procesador termino sin fallas en su PSW, cifro con OTRA "
+          f"LLAVE\nque la del modelo, {formato(llave)}.\n"
+          f"La llave de cargar_llave.s (r5 a r8) y la de LLAVE= tienen que "
+          f"ser la misma.")
 
     # --- el contenedor vuelve a memoria tal como salio ----------------------
     # Es lo que cargaria el procesador que descifra si el archivo viajara

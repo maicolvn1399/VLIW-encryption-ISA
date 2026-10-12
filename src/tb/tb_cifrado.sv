@@ -123,6 +123,29 @@ module tb_cifrado;
     end
   endtask
 
+  // Traduce el PSW a palabras cuando algo salio mal. Las comprobaciones dicen
+  // QUE fallo; esto dice POR QUE, que es lo que hace falta para corregirlo.
+  task automatic diagnostico(input string quien, input logic [`XLEN-1:0] p);
+    begin
+      if (p[`PSW_EXC] || p[`PSW_AUTHFAIL]) begin
+        $display("  >> diagnostico del procesador que %s, PSW = %08h", quien, p);
+        if (p[`PSW_AUTHFAIL])
+          $display("     AUTHFAIL: el LOGIN fallo. La credencial que arma cargar_llave.s en r1 a r4 no coincide con ROT_SECRET de top.sv");
+        if (p[`PSW_EXC])
+          case (p[`PSW_CAUSE])
+            `CAUSE_DENIED:   $display("     CAUSE = DENIED: la boveda anulo una operacion por falta de sesion. Con AUTHFAIL, es consecuencia de la credencial");
+            `CAUSE_NOKEY:    $display("     CAUSE = NOKEY: una ronda pidio una ranura de llave sin instalar");
+            `CAUSE_ILLOP:    $display("     CAUSE = ILLOP: el programa tiene una instruccion invalida");
+            `CAUSE_MISALIGN: $display("     CAUSE = MISALIGN: un acceso a memoria desalineado");
+            `CAUSE_RANGE:    $display("     CAUSE = RANGE: un acceso fuera de la memoria de datos");
+            `CAUSE_WCONF:    $display("     CAUSE = WCONF: dos slots escribieron el mismo registro");
+            default:         $display("     CAUSE = %0d", p[`PSW_CAUSE]);
+          endcase
+        $display("     La llave de cifrado, r5 a r8, no produce fallas: una llave distinta solo da otro criptograma");
+      end
+    end
+  endtask
+
   task automatic resumen();
     begin
       $display("---");
@@ -223,6 +246,7 @@ module tb_cifrado;
     check1("el procesador que cifra se detuvo", halt_c, 1'b1);
     check1("sin fallas en su PSW",              psw_c[`PSW_EXC], 1'b0);
     check1("y la sesion se cerro al volver",    psw_c[`PSW_AUTH], 1'b0);
+    diagnostico("cifra", psw_c);
 
     check_int("la cabecera sobrevivio al cifrado, bytes",
               cif.u_dmem.storage[W_BUF], n_bytes);
@@ -272,6 +296,7 @@ module tb_cifrado;
       check1("el procesador que descifra se detuvo", halt_d, 1'b1);
       check1("sin fallas en su PSW",                 psw_d[`PSW_EXC], 1'b0);
       check1("y su sesion tambien se cerro",         psw_d[`PSW_AUTH], 1'b0);
+      diagnostico("descifra", psw_d);
 
       // ----------------------------------------------------------------------
       $display("");
