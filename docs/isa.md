@@ -667,6 +667,10 @@ Con el primero, una rutina segura invocada con `JAL` queda deslogueada por hardw
 
 Se evaluó un watchdog por contador de ciclos y se descarto como mecanismo principal: introduce cierres de sesión que dependen del tiempo de ejecución, lo que reduce fallas intermitentes muy difíciles de reproducir en testbench. La comparación del `PC` contra el rango seguro es determinista, cuesta dos comparadores y cubre el mismo escenario de programa interrumpido.
 
+**Consecuencia para el generador de código.** El cierre automático se evalúa en el mismo flanco en que `LOGIN` fijaría `AUTH`, así que un `LOGIN` ejecutado fuera de `[SEC_BASE, SEC_LIMIT]` no falla: simplemente no abre sesión, y las rondas posteriores se anulan con `DENIED`. Por eso **todo el camino criptográfico, desde el `LOGIN` hasta la última ronda, tiene que quedar dentro de la región segura**, incluido el lazo que recorre los bloques de un archivo y el salto que lo cierra. Lo único que puede quedar afuera es la construcción de las constantes de la credencial y de la llave, porque `MOVI` y `MOVH` no son privilegiadas.
+
+Un programa de usuario entra entonces con `JALR` a una etiqueta dentro de la región, como hacen `tools/programas/cifrar_archivo.s` y `descifrar_archivo.s`. El retorno sale de la región y cierra la sesión por hardware, que es exactamente el comportamiento buscado.
+
 ### 8.4 Aislamiento
 
 No existe ninguna instrucción, en ningún slot, cuya fuente sea la bóveda y cuyo destino sea un registro de propósito general o una dirección de memoria de datos. Las únicas lectoras son `F4E` y `F4D`, y su salida ya pasó por la función de ronda, que no es invertible sin conocer la subllave. El aislamiento es estructural: en la microarquitectura no hay ruta de datos desde `key_vault.sv` ni hacia `dmen.sv`.
@@ -1042,3 +1046,15 @@ El formato del buffer, que producen `load_file.py` y `extract_data.py`:
 | `0x4008` | Los datos, little-endian, rellenados con ceros hasta un múltiplo de 8 bytes |
 
 La cantidad de bytes hace falta porque Feistel4 trabaja sobre bloques de 64 bits y casi ningún archivo mide un múltiplo exacto de 8: sin ese número, al extraer no habría forma de distinguir los ceros de relleno de los ceros que de verdad estaban en el archivo, y todo archivo que terminara en `0x00` saldría truncado. La cantidad de bloques la lee el programa que cifra para saber cuántas vueltas dar, y se deja calculada para no gastar una división en cada corrida.
+
+### v1.5
+
+Dónde tiene que vivir el código criptográfico. Es información nueva que salió de escribir el programa de archivo completo: no cambia ninguna codificación ni ninguna latencia, pero sin ella el código generado se ejecuta sin fallar y cifra con la llave equivocada, que es la peor forma de equivocarse.
+
+| Cambio | Alcance | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| Un `LOGIN` fuera de la región segura no abre sesión, y no reporta falla al hacerlo | Sección 8.3 | **Sí**, el `LOGIN` tiene que estar dentro de la región |
+| El lazo completo de rondas y sus saltos tienen que quedar dentro de `[SEC_BASE, SEC_LIMIT]` | Sección 8.3 | **Sí**, condiciona la ubicación del código |
+| La construcción de las constantes (`MOVI` / `MOVH`) puede quedar afuera | Sección 8.3 | No, es una libertad |
+
+El detalle está en la sección 8.3, y los dos programas de `tools/programas/` que cifran y descifran un archivo son el ejemplo ejecutable: `cifrar_archivo.s` deja el prólogo en `0x0000` y entra con `JALR` a `0x7000`, donde viven el `LOGIN`, la instalación de la llave y el lazo. `tb_archivo.sv` comprueba la ida y la vuelta sobre un archivo real, y `tools/probar_flujo.py` descifra con un modelo de referencia en Python el criptograma que produjo el RTL.

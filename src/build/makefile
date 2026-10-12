@@ -79,6 +79,12 @@ DEPS_asm          := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/feistel.hex $(PROGS)/feistel_datos.hex
 DEPS_div          := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/div32_prueba.hex $(PROGS)/div32_prueba_datos.hex
+# tb_archivo carga tres imagenes por referencia jerarquica, no por macro: son
+# dos programas distintos en una misma simulacion y las macros son globales.
+DEPS_archivo      := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/cifrar_archivo.hex \
+                     $(PROGS)/descifrar_archivo.hex \
+                     $(PROGS)/archivo_prueba.hex
 
 # ---- Opciones de compilacion por unidad -------------------------------------
 # tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
@@ -90,7 +96,7 @@ XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
-NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div
+NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -101,7 +107,7 @@ WAVE_TARGETS := $(addprefix wave-,$(UNITS))
 
 .PHONY: all sim list clean lint $(UNITS) $(WAVE_TARGETS) $(LINT_TARGETS)
 
-all: herramientas sim
+all: herramientas sim flujo
 
 # ---- Pruebas de las herramientas en Python ----------------------------------
 # El ensamblador tiene su propio arnes, con el mismo formato de salida que los
@@ -150,6 +156,8 @@ BUNDLES_feistel      := 2048
 PALABRAS_feistel     := 64
 BUNDLES_div32_prueba := 128
 PALABRAS_div32_prueba := 64
+BUNDLES_cifrar_archivo    := 2048
+BUNDLES_descifrar_archivo := 2048
 
 $(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
 	$(ASM) $< -o $(PROGS)/$*.hex --datos $(PROGS)/$*_datos.hex \
@@ -157,10 +165,28 @@ $(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
 	       --palabras $(or $(PALABRAS_$*),64)
 
 .PHONY: programas cobertura
-programas: $(PROGS)/feistel.hex $(PROGS)/div32_prueba.hex
+programas: $(PROGS)/feistel.hex $(PROGS)/div32_prueba.hex \
+           $(PROGS)/cifrar_archivo.hex $(PROGS)/descifrar_archivo.hex \
+           $(PROGS)/archivo_prueba.hex
+
+# Los dos programas de archivo incluyen los mismos dos fragmentos
+$(PROGS)/cifrar_archivo.hex $(PROGS)/descifrar_archivo.hex: \
+	$(PROGS)/cargar_llave.s $(PROGS)/vault_sesion.s
+
+# La imagen del archivo de prueba la produce load_file.py, no el ensamblador
+$(PROGS)/archivo_prueba.hex: $(PROGS)/archivo_prueba.txt $(TOOLS)/load_file.py
+	python3 $(TOOLS)/load_file.py $< -o $@ --palabras 16384
 
 # div32_prueba.s incluye div32.s, asi que su binario depende de los dos
 $(PROGS)/div32_prueba.hex: $(PROGS)/div32.s
+
+# El flujo completo, de archivo a archivo. Depende del volcado que escribe
+# tb_archivo, asi que corre el testbench primero.
+.PHONY: flujo
+flujo: archivo
+	@echo ""
+	@echo "---- flujo completo de archivo a archivo ----"
+	python3 $(TOOLS)/probar_flujo.py cifrado_volcado.hex
 
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:
@@ -184,5 +210,11 @@ $(LINT_TARGETS): lint-%:
 	@echo "---- verilator $* ----"
 	$(VERILATOR) $(LINT_FLAGS) $(SUB_$*) $(CPU)/$*.sv --top-module $*
 
+# clean borra TAMBIEN los binarios que produce el ensamblador. No es por
+# prolijidad: las marcas de tiempo del sistema de archivos tienen granularidad
+# de un segundo, asi que editar un .s y correr make en el mismo segundo puede
+# dejar el .hex anterior en pie, y la simulacion correria el programa viejo sin
+# que nada avise. Con "make clean && make" eso no puede pasar.
 clean:
-	rm -f *.vvp *.vcd
+	rm -f *.vvp *.vcd cifrado_volcado.hex
+	rm -f $(PROGS)/*.hex

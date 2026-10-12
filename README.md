@@ -57,7 +57,12 @@ reenvía resultados y no se detiene nunca.
 | Volcado de memoria a archivo | `tools/extract_data.py` |
 | Formato del buffer, compartido por las dos | `tools/formato_buffer.py` |
 | Su arnés de pruebas, 31 casos | `tools/probar_archivos.py` |
-| Programa de cifrado Feistel4 | `tools/programas/feistel.s` |
+| El flujo completo contra un modelo de referencia, 5 casos | `tools/probar_flujo.py` |
+| Programa de cifrado Feistel4 de un bloque | `tools/programas/feistel.s` |
+| **Cifra un archivo completo** | `tools/programas/cifrar_archivo.s` |
+| **Lo descifra** | `tools/programas/descifrar_archivo.s` |
+| Prólogo compartido: credencial, llave y cabecera | `tools/programas/cargar_llave.s` |
+| Prólogo compartido: sesión de bóveda e instalación | `tools/programas/vault_sesion.s` |
 | Subrutina de división de 32 bits | `tools/programas/div32.s` |
 | Programa que usa el 100% del conjunto | `tools/programas/cobertura.s` |
 
@@ -92,9 +97,11 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # pruebas de las herramientas y los veintitrés testbenches
+make            # pruebas de las herramientas, los veinticuatro testbenches y el flujo
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
+make archivo    # cifra y descifra un archivo completo sobre el RTL
+make flujo      # y lo descifra con un modelo de referencia en Python
 make asm        # ensambla feistel.s y corre el binario en el RTL
 make herramientas  # solo las pruebas de las herramientas en Python
 make div        # corre la subrutina de división en el procesador
@@ -102,7 +109,7 @@ make cobertura  # comprueba que se usa el 100% del conjunto
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
 make list       # lista las unidades disponibles
-make clean      # borra los artefactos
+make clean      # borra los artefactos, incluidos los .hex ensamblados
 ```
 
 Un testbench que encuentra un error llama a `$fatal`, lo que le da a `vvp` un
@@ -133,6 +140,13 @@ relleno con que el ensamblador generó el `.hex` no coincide con el tamaño de l
 memoria del testbench que lo carga. El makefile declara el tamaño de cada
 programa por separado (`BUNDLES_<programa>`) para que los dos números cuadren.
 
+`make clean` borra también los `.hex` que produce el ensamblador, y eso tampoco
+es prolijidad: las marcas de tiempo del sistema de archivos tienen granularidad
+de un segundo, así que un `.s` editado y su `.hex` ya existente pueden caer en
+el mismo segundo y `make` se salta el reensamblado. El resultado es una
+simulación que corre el binario anterior y falla sin motivo aparente. Ante
+cualquier resultado que no cuadre, `make clean && make`.
+
 ---
 
 ## Cobertura actual
@@ -162,18 +176,26 @@ programa por separado (`BUNDLES_<programa>`) para que los dos números cuadren.
 | `top` | 45 | **El procesador completo** corriendo siete programas: aritmética con la latencia de 3 bundles, memoria en los tres tamaños con y sin signo, llamada y retorno, **cifrado Feistel4 completo** contra valores calculados fuera del simulador, la misma rutina denegada fuera de la región segura, `ILLOP` y `MISALIGN`, y que nada se ejecute después de `HALT` |
 | `asm` | 12 | **La cadena completa**: el binario que produce `cerbero_asm.py` desde `feistel.s`, corriendo en el RTL, cifrando bien y con el cierre automático de sesión al salir de la región segura |
 | `div` | 15 | **La subrutina de división** corriendo en el procesador: seis pares, con divisor cero y con el bit 31 encendido |
-| **Total** | **1673** | |
+| `archivo` | 27 | **La cadena completa sobre un archivo real**: dos procesadores, uno cifra y el otro descifra lo que el primero dejó en memoria; criptograma contra valores calculados fuera del simulador, el archivo recuperado byte por byte, la cabecera intacta, y un barrido de los 64 KB de las dos memorias buscando subllaves filtradas |
+| **Total** | **1700** | |
 
-A eso se suman **102 casos** de las herramientas en Python, que `make` corre antes de los testbenches:
+A eso se suman **107 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
 
 | | |
 |---|---|
 | `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
 | `probar_archivos.py` | 31 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, y lo que debe fallar |
+| `probar_flujo.py` | 5 casos: toma el volcado de `$writememh` que dejó `tb_archivo`, lo convierte a archivo con `extract_data.py` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
+
+El último es el que cierra el argumento. `tb_archivo` comprueba que el hardware
+descifra lo que cifró, pero eso se cumpliría igual si `F4E` y `F4D` estuvieran
+mal de forma inversa. Si el criptograma que produjo el procesador se deshace con
+un modelo independiente, entonces el procesador implementa Feistel4 y no otra
+cosa parecida.
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los veintitrés aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los veinticuatro aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -198,8 +220,14 @@ cerbero/
 │   ├── extract_data.py          Volcado de DMEM a archivo
 │   ├── formato_buffer.py        El formato que comparten las dos
 │   ├── probar_archivos.py       Sus pruebas, 31 casos
+│   ├── probar_flujo.py          El flujo completo contra el modelo de referencia
 │   └── programas/
 │       ├── feistel.s            Cifrado de un bloque con sesión de bóveda
+│       ├── cifrar_archivo.s     Cifra un archivo completo, bloque por bloque
+│       ├── descifrar_archivo.s  Y lo devuelve a claro
+│       ├── cargar_llave.s       Prólogo incluido por los dos: constantes
+│       ├── vault_sesion.s       Prólogo incluido por los dos: sesión y llave
+│       ├── archivo_prueba.txt   El archivo de 23 bytes que se cifra
 │       ├── div32.s              Subrutina de división sin signo
 │       ├── div32_prueba.s       Seis pares para probarla
 │       └── cobertura.s          Usa el 100% del conjunto de instrucciones
@@ -236,6 +264,7 @@ cerbero/
         ├── tb_top.sv            Siete programas sobre el procesador completo
         ├── tb_asm.sv            El binario del ensamblador sobre el RTL
         ├── tb_div.sv            La subrutina de división sobre el RTL
+        ├── tb_archivo.sv        Cifrado y descifrado de un archivo completo
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -338,6 +367,15 @@ agregar el nombre a `NO_RTL`.
   escritura de S3 entre la ALU corta y la unidad de ronda; y sustituir el valor
   del dato cargado en MEM, que no existe todavía en EX. Los cuatro tienen su
   propio programa en `tb_top.sv`, y los cuatro se probaron con mutantes.
+- **Todo el camino criptográfico vive dentro de la región segura.** No es una
+  recomendación: el cierre automático de sesión se evalúa en el mismo flanco en
+  que `LOGIN` fijaría `AUTH`, así que un `LOGIN` fuera de
+  `[SEC_BASE, SEC_LIMIT]` no falla, simplemente no abre sesión, y las rondas
+  posteriores se anulan con `DENIED`. Por eso los dos programas de archivo
+  ponen su lazo completo en `0x7000` y entran con `JALR`, y por eso el retorno
+  cierra la sesión por hardware. Lo único que puede quedar afuera es la
+  construcción de las constantes. Está en la sección 8.3 del ISA, en la cabecera
+  de `vault_sesion.s`, y `tb_archivo` lo comprueba.
 - **Los archivos de carga entran por macro, no por parámetro.** Icarus Verilog 12
   no puede pasar un parámetro de tipo `string` de un módulo a un submódulo: falla
   en elaboración con `Unable to bind variable`. Una macro se expande como literal
@@ -368,9 +406,14 @@ agregar el nombre a `NO_RTL`.
 | Ensamblador propio | **Completo y verificado** |
 | `load_file.py` y `extract_data.py` | **Completos y verificados** |
 | Subrutina `__div32` | **Completa y verificada** |
-| Programa que cifra un archivo completo | Pendiente |
-| Registro de cambios para CE1108 | Pendiente de enviar |
-| Registros de segmentación del pipeline | Pendiente |
-| Ensamblador propio | Pendiente |
-| `load_file.py` y `extract_data.py` | Pendiente |
-| Subrutina `__divmod32` | Pendiente |
+| Programa que cifra y descifra un archivo completo | **Completo y verificado** |
+| Registro de cambios para CE1108 | **Escrito**, en `docs/isa.md` §14 (v1.1 a v1.5) |
+
+**El código está completo.** Las diecisiete unidades, los tres registros de
+segmentación, el procesador completo, el ensamblador, las dos herramientas de
+archivo y los programas de prueba, con 1700 casos de testbench y 107 de las
+herramientas, todos pasando desde cero con `make clean && make lint && make`.
+
+Lo que queda del proyecto no es código: es el documento de la Entrega 2. El
+registro de cambios que CE1108 necesita ya está escrito como la sección 14 de
+`docs/isa.md`, así que entregarles este paquete cumple con esa comunicación.
