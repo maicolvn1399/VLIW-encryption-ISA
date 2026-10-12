@@ -49,7 +49,7 @@ AQUI = Path(__file__).resolve().parent
 ORIGINAL = AQUI / "programas" / "archivo_prueba.txt"
 
 # La llave que instala vault_sesion.s, una palabra por ronda
-LLAVE = [0x11111111, 0x22222222, 0x33333333, 0x44444444]
+LLAVE = [0x9E3779B9, 0x7F4A7C15, 0xC2B2AE35, 0x27D4EB2F]
 
 M = 0xFFFFFFFF
 

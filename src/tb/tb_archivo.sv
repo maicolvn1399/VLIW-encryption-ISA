@@ -33,9 +33,11 @@
 // calculados fuera del simulador con la formula del enunciado. Las dos mitades
 // juntas son lo que cierra el caso:
 //
-//   bloque 0   claro 42524543 2D4F5245  ->  cifrado 1BB0FF04 C1B93A0C
-//   bloque 1   claro 69632031 20617266  ->  cifrado 610667D9 FA8F3559
-//   bloque 2   claro 6F747365 00212121  ->  cifrado 9151652F 00F0DEDC
+//   llave      9E3779B9 7F4A7C15 C2B2AE35 27D4EB2F
+//
+//   bloque 0   claro 42524543 2D4F5245  ->  cifrado BA3317EC C37D6373
+//   bloque 1   claro 69632031 20617266  ->  cifrado 4F9DA60A E3EF4E76
+//   bloque 2   claro 6F747365 00212121  ->  cifrado 4DED010E 9C66AA77
 //
 // -----------------------------------------------------------------------------
 // LA CABECERA NO SE CIFRA
@@ -75,9 +77,9 @@ module tb_archivo;
       CLARO[2] = 32'h69632031;  CLARO[3] = 32'h20617266;
       CLARO[4] = 32'h6F747365;  CLARO[5] = 32'h00212121;
 
-      CIFRADO[0] = 32'h1BB0FF04;  CIFRADO[1] = 32'hC1B93A0C;
-      CIFRADO[2] = 32'h610667D9;  CIFRADO[3] = 32'hFA8F3559;
-      CIFRADO[4] = 32'h9151652F;  CIFRADO[5] = 32'h00F0DEDC;
+      CIFRADO[0] = 32'hBA3317EC;  CIFRADO[1] = 32'hC37D6373;
+      CIFRADO[2] = 32'h4F9DA60A;  CIFRADO[3] = 32'hE3EF4E76;
+      CIFRADO[4] = 32'h4DED010E;  CIFRADO[5] = 32'h9C66AA77;
     end
   endtask
 
@@ -327,14 +329,14 @@ module tb_archivo;
 
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
-      if (cif.u_dmem.storage[i] === 32'h1111_1111 ||
-          cif.u_dmem.storage[i] === 32'h2222_2222 ||
-          cif.u_dmem.storage[i] === 32'h3333_3333 ||
-          cif.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
-      if (des.u_dmem.storage[i] === 32'h1111_1111 ||
-          des.u_dmem.storage[i] === 32'h2222_2222 ||
-          des.u_dmem.storage[i] === 32'h3333_3333 ||
-          des.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
+      if (cif.u_dmem.storage[i] === 32'h9E37_79B9 ||
+          cif.u_dmem.storage[i] === 32'h7F4A_7C15 ||
+          cif.u_dmem.storage[i] === 32'hC2B2_AE35 ||
+          cif.u_dmem.storage[i] === 32'h27D4_EB2F) malos = malos + 1;
+      if (des.u_dmem.storage[i] === 32'h9E37_79B9 ||
+          des.u_dmem.storage[i] === 32'h7F4A_7C15 ||
+          des.u_dmem.storage[i] === 32'hC2B2_AE35 ||
+          des.u_dmem.storage[i] === 32'h27D4_EB2F) malos = malos + 1;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 
