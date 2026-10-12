@@ -96,6 +96,10 @@ DEPS_cifrado      := $(wildcard $(CPU)/*.sv) \
 # tb_cifrado carga el archivo
 DEPS_descifrado   := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/descifrar_archivo.hex
+# tb_credencial corre cifrar_archivo sobre un procesador con otro ROT_SECRET
+DEPS_credencial   := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/cifrar_archivo.hex \
+                     $(PROGS)/archivo_prueba.hex
 
 # ---- Opciones de compilacion por unidad -------------------------------------
 # tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
@@ -108,7 +112,7 @@ XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
 NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo cifrado \
-          descifrado
+          credencial descifrado
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para

@@ -97,7 +97,7 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # pruebas de las herramientas, los veinticinco testbenches y el flujo
+make            # pruebas de las herramientas, los veintiséis testbenches y el flujo
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
 make archivo    # cifra y descifra un archivo completo sobre el RTL
@@ -105,6 +105,7 @@ make flujo      # y lo descifra con un modelo de referencia en Python
 make cifrar ARCHIVO=ruta  # lo mismo, sobre un archivo cualquiera
 make solo-cifrar ARCHIVO=ruta  # solo el cifrado, verificado contra el modelo
 make solo-descifrar ORIGINAL=ruta  # descifra el .bin que dejo solo-cifrar
+make credencial # con la credencial equivocada no se cifra nada
 make asm        # ensambla feistel.s y corre el binario en el RTL
 make herramientas  # solo las pruebas de las herramientas en Python
 make div        # corre la subrutina de división en el procesador
@@ -270,6 +271,7 @@ cerbero/
         ├── tb_div.sv            La subrutina de división sobre el RTL
         ├── tb_archivo.sv        Cifrado y descifrado de un archivo completo
         ├── tb_cifrado.sv        Lo mismo sobre un archivo cualquiera
+        ├── tb_credencial.sv     Con la credencial equivocada no se cifra nada
         ├── tb_descifrado.sv     Descifrar un archivo cifrado que viene de disco
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
