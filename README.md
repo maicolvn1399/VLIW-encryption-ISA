@@ -56,8 +56,8 @@ reenvía resultados y no se detiene nunca.
 | Archivo a imagen de memoria | `tools/load_file.py` |
 | Volcado de memoria a archivo | `tools/extract_data.py` |
 | Formato del buffer, compartido por las dos | `tools/formato_buffer.py` |
-| Su arnés de pruebas, 31 casos | `tools/probar_archivos.py` |
-| El flujo completo contra un modelo de referencia, 5 casos | `tools/probar_flujo.py` |
+| Su arnés de pruebas, 39 casos | `tools/probar_archivos.py` |
+| El flujo completo contra un modelo de referencia, 7 casos | `tools/probar_flujo.py` |
 | Programa de cifrado Feistel4 de un bloque | `tools/programas/feistel.s` |
 | **Cifra un archivo completo** | `tools/programas/cifrar_archivo.s` |
 | **Lo descifra** | `tools/programas/descifrar_archivo.s` |
@@ -184,8 +184,8 @@ A eso se suman **107 casos** de las herramientas en Python, que `make` corre ant
 | | |
 |---|---|
 | `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
-| `probar_archivos.py` | 31 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, y lo que debe fallar |
-| `probar_flujo.py` | 5 casos: toma el volcado de `$writememh` que dejó `tb_archivo`, lo convierte a archivo con `extract_data.py` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
+| `probar_archivos.py` | 39 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, y el contenedor del archivo cifrado |
+| `probar_flujo.py` | 7 casos: toma el volcado de `$writememh` que dejó `tb_archivo`, lo convierte en contenedor cifrado con `extract_data.py --cifrado` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
 
 El último es el que cierra el argumento. `tb_archivo` comprueba que el hardware
 descifra lo que cifró, pero eso se cumpliría igual si `F4E` y `F4D` estuvieran
@@ -219,7 +219,7 @@ cerbero/
 │   ├── load_file.py             Archivo a imagen de DMEM
 │   ├── extract_data.py          Volcado de DMEM a archivo
 │   ├── formato_buffer.py        El formato que comparten las dos
-│   ├── probar_archivos.py       Sus pruebas, 31 casos
+│   ├── probar_archivos.py       Sus pruebas, 39 casos
 │   ├── probar_flujo.py          El flujo completo contra el modelo de referencia
 │   └── programas/
 │       ├── feistel.s            Cifrado de un bloque con sesión de bóveda

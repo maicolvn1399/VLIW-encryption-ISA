@@ -42,6 +42,22 @@ la primera palabra con el primero en la parte baja.
 El par de palabras de cada bloque se interpreta como la mitad L en la palabra de
 direccion menor y la R en la mayor, que es el mismo orden que usa un par de
 registros Pn = R(2n):R(2n+1).
+
+-----------------------------------------------------------------------------
+EL ARCHIVO CIFRADO ES UN CONTENEDOR
+-----------------------------------------------------------------------------
+Un archivo en claro sale recortado a su cantidad de bytes, pero un criptograma
+no puede: despues de cifrar, el relleno del ultimo bloque ya no son ceros sino
+parte del criptograma, y sin el el bloque no se descifra. Por eso el cifrado
+se guarda como el buffer entero, cabecera incluida:
+
+    bytes 0-3     cantidad de bytes del archivo original, little-endian
+    bytes 4-7     cantidad de bloques, little-endian
+    bytes 8-...   los bloques completos, 8 bytes cada uno
+
+La cabecera no se cifra, asi que viaja legible y el descifrado recupera el
+tamano original. extract_data.py --cifrado lo escribe y load_file.py --cifrado
+lo vuelve a poner en memoria sin tocarlo.
 """
 
 BASE_POR_OMISION = 0x4000
@@ -66,12 +82,12 @@ def empaquetar(datos):
     return palabras
 
 
-def desempaquetar(palabras):
-    """Inversa de empaquetar: devuelve los bytes del archivo original.
+def validar_cabecera(palabras):
+    """Comprueba la cabecera contra el tamano real y devuelve cuantas palabras
+    ocupa el buffer completo.
 
-    Comprueba la cabecera contra el tamano real, porque un volcado truncado o
-    una base equivocada se notan justo aqui y no cuando el archivo recuperado
-    sale raro.
+    Un volcado truncado o una base equivocada se notan justo aqui y no cuando
+    el archivo recuperado sale raro.
     """
     if len(palabras) < 2:
         raise ValueError(
@@ -92,10 +108,50 @@ def desempaquetar(palabras):
             f"la cabecera es incoherente: dice {n_bytes} bytes en "
             f"{n_bloques} bloques de {BYTES_POR_BLOQUE}")
 
+    return esperadas
+
+
+def desempaquetar(palabras):
+    """Inversa de empaquetar: devuelve los bytes del archivo original."""
+    esperadas = validar_cabecera(palabras)
+    n_bytes = palabras[0]
+
     cuerpo = bytearray()
     for p in palabras[2:esperadas]:
         cuerpo += (p & 0xFFFFFFFF).to_bytes(4, "little")
     return bytes(cuerpo[:n_bytes])
+
+
+def a_contenedor(palabras):
+    """Devuelve el buffer completo como bytes: cabecera y bloques enteros.
+
+    Es el formato de un archivo cifrado. Nada se recorta, porque despues de
+    cifrar el relleno del ultimo bloque ya es parte del criptograma.
+    """
+    esperadas = validar_cabecera(palabras)
+    return b"".join((p & 0xFFFFFFFF).to_bytes(4, "little")
+                    for p in palabras[:esperadas])
+
+
+def de_contenedor(datos):
+    """Inversa de a_contenedor: devuelve las palabras del buffer tal cual.
+
+    Exige que el archivo mida exactamente lo que dice su cabecera. Un
+    contenedor recortado o con bytes de mas no es un criptograma valido, y
+    aceptarlo descifraria basura sin avisar.
+    """
+    if len(datos) % 4:
+        raise ValueError(
+            f"el contenedor mide {len(datos)} bytes, que no es un multiplo "
+            f"de palabra")
+    palabras = [int.from_bytes(datos[i:i + 4], "little")
+                for i in range(0, len(datos), 4)]
+    esperadas = validar_cabecera(palabras)
+    if len(palabras) != esperadas:
+        raise ValueError(
+            f"la cabecera dice {esperadas} palabras y el contenedor trae "
+            f"{len(palabras)}")
+    return palabras
 
 
 def leer_hex(ruta):

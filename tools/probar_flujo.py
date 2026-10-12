@@ -9,7 +9,7 @@ Cierra la cadena del proyecto sobre un volcado DE VERDAD de la simulacion:
     archivo original
       -> load_file.py            imagen de DMEM
       -> tb_archivo.sv           el procesador cifra  ($writememh)
-      -> extract_data.py         el criptograma como archivo
+      -> extract_data.py         el criptograma como contenedor (--cifrado)
       -> modelo de referencia     descifrado en Python
       -> debe dar el archivo original, byte por byte
 
@@ -26,14 +26,24 @@ escribe:
 
     make archivo flujo
 
+Un segundo argumento opcional cambia el archivo original, para comprobar el
+volcado de tb_cifrado.sv sobre un archivo cualquiera:
+
+    probar_flujo.py cifrado_libre.hex mi_texto.txt
+
 """
 
+import contextlib
+import io
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_data                                   # noqa: E402
-from formato_buffer import empaquetar                  # noqa: E402
+import load_file                                      # noqa: E402
+from formato_buffer import (BASE_POR_OMISION, a_contenedor,  # noqa: E402
+                            de_contenedor, desempaquetar, empaquetar,
+                            leer_hex)
 
 AQUI = Path(__file__).resolve().parent
 ORIGINAL = AQUI / "programas" / "archivo_prueba.txt"
@@ -89,11 +99,15 @@ def cifrar_bloque(L, R):
     return L, R
 
 
-def main(volcado):
+def main(volcado, ruta_original=ORIGINAL):
     print("=== probar_flujo: de archivo a archivo, sobre el volcado real ===")
     print("")
 
-    original = ORIGINAL.read_bytes()
+    ruta_original = Path(ruta_original)
+    if not ruta_original.is_file():
+        print(f"  FALLA  no se encontro el archivo original {ruta_original}")
+        return 1
+    original = ruta_original.read_bytes()
     print(f"  archivo original: {len(original)} bytes")
 
     ruta_volcado = Path(volcado)
@@ -103,54 +117,72 @@ def main(volcado):
         return 1
 
     # --- el criptograma que produjo el procesador ---------------------------
-    cifrado = AQUI / "programas" / "cifrado_de_la_simulacion.bin"
-    import contextlib
-    import io
+    # Sale como contenedor, con la cabecera y los bloques completos: el relleno
+    # del ultimo bloque ya es criptograma y recortarlo lo haria indescifrable.
+    # Se escribe junto al volcado, en el directorio de build.
+    cifrado = ruta_volcado.with_suffix(".bin")
     with contextlib.redirect_stdout(io.StringIO()):
-        r = extract_data.main([str(ruta_volcado), "-o", str(cifrado)])
-    check("extract_data lee el volcado de $writememh", r == 0, f"devolvio {r}")
+        r = extract_data.main([str(ruta_volcado), "-o", str(cifrado),
+                               "--cifrado"])
+    check("extract_data --cifrado lee el volcado de $writememh", r == 0,
+          f"devolvio {r}")
     if r != 0:
         return 1
 
-    datos_cif = cifrado.read_bytes()
-    check("y recupera un archivo del mismo tamano que el original",
-          len(datos_cif) == len(original),
-          f"{len(datos_cif)} contra {len(original)}")
-    check("que no es el original: el procesador si cifro",
-          datos_cif != original)
+    contenedor = cifrado.read_bytes()
+    pal = de_contenedor(contenedor)
+    n_bloques = pal[1]
+    check("el contenedor guarda el tamano original en la cabecera",
+          pal[0] == len(original), f"{pal[0]} contra {len(original)}")
+    check("y los bloques completos, sin recortar el ultimo",
+          len(contenedor) == 8 + 8 * n_bloques,
+          f"{len(contenedor)} bytes para {n_bloques} bloques")
+    check("que no son el original: el procesador si cifro",
+          n_bloques == 0 or pal[2:] != empaquetar(original)[2:])
 
     # --- el modelo de referencia lo deshace ---------------------------------
-    pal = empaquetar(datos_cif)
-    n_bloques = pal[1]
     claro = []
     for b in range(n_bloques):
         i = 2 + 2 * b
         L, R = descifrar_bloque(pal[i], pal[i + 1])
         claro += [L, R]
-
-    recuperado = b"".join(p.to_bytes(4, "little") for p in claro)[:len(original)]
+    recuperado = desempaquetar(pal[:2] + claro)
 
     check("el modelo de referencia descifra lo que cifro el hardware",
           recuperado == original,
-          f"original   {original!r}\nrecuperado {recuperado!r}")
+          f"original   {original[:64]!r}\nrecuperado {recuperado[:64]!r}")
 
     # --- y en el otro sentido: el modelo cifra lo mismo que el hardware -----
     pal_claro = empaquetar(original)
-    esperado = []
+    esperado = pal_claro[:2]
     for b in range(pal_claro[1]):
         i = 2 + 2 * b
         L, R = cifrar_bloque(pal_claro[i], pal_claro[i + 1])
         esperado += [L, R]
-    bytes_esperados = b"".join(
-        p.to_bytes(4, "little") for p in esperado)[:len(original)]
 
-    check("y cifra byte por byte lo mismo que el hardware",
-          datos_cif == bytes_esperados,
-          f"hardware {datos_cif.hex()}\nmodelo   {bytes_esperados.hex()}")
+    check("y cifra bloque por bloque lo mismo que el hardware",
+          pal == esperado,
+          f"hardware {a_contenedor(pal)[:64].hex()}\n"
+          f"modelo   {a_contenedor(esperado)[:64].hex()}")
+
+    # --- el contenedor vuelve a memoria tal como salio ----------------------
+    # Es lo que cargaria el procesador que descifra si el archivo viajara
+    # fuera de la simulacion y volviera
+    recarga = cifrado.with_suffix(".recarga.hex")
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = load_file.main([str(cifrado), "-o", str(recarga), "--cifrado"])
+    inicio = BASE_POR_OMISION // 4
+    check("load_file --cifrado devuelve a memoria el mismo buffer",
+          r == 0 and leer_hex(recarga)[inicio:] ==
+          leer_hex(ruta_volcado)[inicio:inicio + len(pal)],
+          f"devolvio {r}")
+    recarga.unlink(missing_ok=True)
 
     print("")
-    print(f"  claro    {original!r}")
-    print(f"  cifrado  {datos_cif.hex()}")
+    print(f"  claro    {original[:64]!r}")
+    print(f"  cifrado  {contenedor[:64].hex()}")
+    if len(contenedor) > 64:
+        print(f"           (primeros 64 de {len(contenedor)} bytes)")
     print("")
     print("---")
     print(f"casos: {casos}   fallidos: {fallidos}")
@@ -163,4 +195,5 @@ def main(volcado):
 
 if __name__ == "__main__":
     volcado = sys.argv[1] if len(sys.argv) > 1 else "cifrado_volcado.hex"
-    sys.exit(main(volcado))
+    original = sys.argv[2] if len(sys.argv) > 2 else ORIGINAL
+    sys.exit(main(volcado, original))

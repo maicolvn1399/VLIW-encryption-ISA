@@ -11,6 +11,7 @@ dmem.sv.
 
     load_file.py entrada.txt -o datos.hex
     load_file.py foto.png -o datos.hex --base 0x4000 --palabras 16384
+    load_file.py cifrado.bin -o datos.hex --cifrado
 
 El formato del buffer esta en formato_buffer.py, que es el mismo modulo que usa
 extract_data.py para leerlo de vuelta.
@@ -36,7 +37,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from formato_buffer import (BASE_POR_OMISION, BYTES_POR_BLOQUE,   # noqa: E402
-                            empaquetar, escribir_hex)
+                            de_contenedor, empaquetar,
+                            escribir_hex)
 
 
 def main(argv=None):
@@ -52,6 +54,9 @@ def main(argv=None):
     ap.add_argument("--palabras", type=int, default=None,
                     help="rellena la salida hasta esta cantidad de palabras; "
                          "con el tamano de la memoria, $readmemh no avisa")
+    ap.add_argument("--cifrado", action="store_true",
+                    help="la entrada es un contenedor de extract_data.py "
+                         "--cifrado: se carga tal cual, sin cabecera nueva")
     args = ap.parse_args(argv)
 
     base = int(args.base, 0)
@@ -60,8 +65,19 @@ def main(argv=None):
               file=sys.stderr)
         return 2
 
+    if not Path(args.entrada).is_file():
+        print(f"error: no se encontro el archivo {args.entrada}",
+              file=sys.stderr)
+        return 1
     datos = Path(args.entrada).read_bytes()
-    cuerpo = empaquetar(datos)
+    if args.cifrado:
+        try:
+            cuerpo = de_contenedor(datos)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+    else:
+        cuerpo = empaquetar(datos)
 
     # Ceros desde la palabra 0 hasta la base, y despues el buffer
     palabras = [0] * (base // 4) + cuerpo
@@ -73,11 +89,14 @@ def main(argv=None):
 
     total = escribir_hex(args.salida, palabras, args.palabras)
 
-    relleno = (-len(datos)) % BYTES_POR_BLOQUE
     print(f"{args.entrada}: {len(datos)} bytes")
     print(f"  base            {base:#010x}")
     print(f"  bloques de 64 b {cuerpo[1]}")
-    print(f"  relleno         {relleno} byte(s) en cero")
+    if args.cifrado:
+        print(f"  contenedor cifrado de un original de {cuerpo[0]} bytes")
+    else:
+        relleno = (-len(datos)) % BYTES_POR_BLOQUE
+        print(f"  relleno         {relleno} byte(s) en cero")
     print(f"{args.salida}: {total} palabras")
     return 0
 

@@ -9,12 +9,16 @@ despues de una corrida y vuelve a armar el archivo.
 
     extract_data.py volcado.hex -o cifrado.bin
     extract_data.py volcado.hex -o salida.txt --base 0x4000
+    extract_data.py volcado.hex -o cifrado.bin --cifrado
 
 La cantidad de bytes del archivo original sale de la cabecera del buffer, asi
 que el resultado tiene exactamente el tamano que tenia la entrada: el relleno
 que hizo falta para completar el ultimo bloque de 64 bits no aparece. Sin esa
 cabecera, un archivo que terminara en 0x00 saldria truncado y uno que no
 ocupara un multiplo de 8 saldria con basura al final.
+
+Un volcado CIFRADO no se recorta: con --cifrado sale el buffer entero, que es
+lo que load_file.py --cifrado necesita para volver a cargarlo y descifrarlo.
 
 El formato del buffer esta en formato_buffer.py, el mismo modulo que usa
 load_file.py para escribirlo.
@@ -25,8 +29,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from formato_buffer import (BASE_POR_OMISION, desempaquetar,   # noqa: E402
-                            leer_hex)
+from formato_buffer import (BASE_POR_OMISION, a_contenedor,    # noqa: E402
+                            desempaquetar, leer_hex)
 
 
 def main(argv=None):
@@ -38,9 +42,14 @@ def main(argv=None):
     ap.add_argument("--base", default=hex(BASE_POR_OMISION),
                     help="direccion de byte donde arranca el buffer "
                          f"(por omision {BASE_POR_OMISION:#x})")
-    ap.add_argument("--crudo", action="store_true",
-                    help="ignora la cabecera y extrae todas las palabras tal "
-                         "cual, para mirar un volcado a mano")
+    modo = ap.add_mutually_exclusive_group()
+    modo.add_argument("--cifrado", action="store_true",
+                      help="escribe el buffer entero, cabecera y bloques "
+                           "completos, para un volcado cifrado que despues se "
+                           "va a descifrar")
+    modo.add_argument("--crudo", action="store_true",
+                      help="ignora la cabecera y extrae todas las palabras "
+                           "tal cual, para mirar un volcado a mano")
     args = ap.parse_args(argv)
 
     base = int(args.base, 0)
@@ -71,8 +80,9 @@ def main(argv=None):
         datos = bytes(datos)
         cabecera = "(ignorada)"
     else:
+        convertir = a_contenedor if args.cifrado else desempaquetar
         try:
-            datos = desempaquetar(buffer_)
+            datos = convertir(buffer_)
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1

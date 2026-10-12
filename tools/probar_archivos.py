@@ -238,6 +238,70 @@ check("y saca las palabras tal cual, little-endian",
                                     0x55, 0x66, 0x77, 0x88]),
       salida.read_bytes())
 
+print("")
+print("[6] un criptograma viaja con su cabecera")
+
+# Despues de cifrar, el relleno del ultimo bloque ya no son ceros: es parte
+# del criptograma. Si la extraccion recortara a la cantidad de bytes, el
+# ultimo bloque no se podria descifrar. Este buffer imita uno cifrado de nueve
+# bytes: dos bloques, con las cuatro palabras de datos distintas de cero.
+cifrado = [9, 2, 0xA3A2A1A0, 0xB3B2B1B0, 0xC3C2C1C0, 0xD3D2D1D0]
+imagen = tmp / "cifrado.hex"
+escribir_hex(imagen, [0] * 0x1000 + cifrado)
+contenedor = tmp / "cifrado.bin"
+with callado():
+    r = extract_data.main([str(imagen), "-o", str(contenedor), "--cifrado"])
+check("extract_data --cifrado acepta el volcado", r == 0, r)
+
+# Escrito a mano: la cabecera en dos palabras little-endian y los dos bloques
+# completos, incluidos los siete bytes que en el claro eran relleno
+esperado = (bytes([9, 0, 0, 0, 2, 0, 0, 0])
+            + bytes([0xA0, 0xA1, 0xA2, 0xA3, 0xB0, 0xB1, 0xB2, 0xB3,
+                     0xC0, 0xC1, 0xC2, 0xC3, 0xD0, 0xD1, 0xD2, 0xD3]))
+obtenido = contenedor.read_bytes() if contenedor.exists() else b""
+check("y escribe la cabecera mas los bloques completos",
+      obtenido == esperado,
+      f"obtenido {obtenido.hex()}\nesperado {esperado.hex()}")
+
+# De vuelta a memoria: el buffer tiene que quedar identico al volcado, no
+# reempaquetado con una cabecera nueva ni con el relleno en cero
+recarga = tmp / "recarga.hex"
+with callado():
+    r = load_file.main([str(contenedor), "-o", str(recarga), "--cifrado"])
+check("load_file --cifrado acepta el contenedor", r == 0, r)
+buffer_ = leer_hex(recarga)[0x1000:] if recarga.exists() else []
+check("y deja en memoria el mismo buffer que se volco",
+      buffer_ == cifrado,
+      f"obtenido {[f'{p:08X}' for p in buffer_]}\n"
+      f"esperado {[f'{p:08X}' for p in cifrado]}")
+
+# Sin --cifrado, la recarga trataria el contenedor como un archivo nuevo y le
+# pondria otra cabecera encima. Con el contenedor de un archivo vacio se ve
+# que el formato no depende de que haya datos.
+vacio = tmp / "vacio_cifrado.bin"
+vacio.write_bytes(bytes(8))
+with callado():
+    r = load_file.main([str(vacio), "-o", str(recarga), "--cifrado"])
+check("load_file --cifrado acepta el contenedor de un archivo vacio",
+      r == 0 and leer_hex(recarga)[0x1000:0x1002] == [0, 0], r)
+
+# Un contenedor que no cuadra con su propia cabecera se rechaza
+malo = tmp / "malo.bin"
+malo.write_bytes(esperado[:-4])
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main([str(malo), "-o", str(tmp / "s.hex"), "--cifrado"])
+check("load_file --cifrado rechaza un contenedor recortado", r == 1, r)
+
+malo.write_bytes(esperado + bytes(8))
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main([str(malo), "-o", str(tmp / "s.hex"), "--cifrado"])
+check("y uno con bloques de mas", r == 1, r)
+
+malo.write_bytes(esperado[:-1])
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main([str(malo), "-o", str(tmp / "s.hex"), "--cifrado"])
+check("y uno que no mide un multiplo de palabra", r == 1, r)
+
 print("---")
 print(f"casos: {casos}   fallidos: {fallidos}")
 if fallidos:
