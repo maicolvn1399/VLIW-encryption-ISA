@@ -18,9 +18,11 @@ coincidir byte por byte con lo que saco el hardware. Si ademas se da el archivo
 original, tambien se compara contra el.
 
     probar_descifrado.py cifrado.bin volcado.hex salida.bin [original]
+                         [--llave K]
 
 """
 
+import argparse
 import contextlib
 import io
 import sys
@@ -29,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_data                                   # noqa: E402
 from formato_buffer import de_contenedor, desempaquetar  # noqa: E402
+from llave import LLAVE_POR_OMISION, formato, leer_llave  # noqa: E402
 from probar_flujo import descifrar_bloque             # noqa: E402
 
 casos = 0
@@ -48,9 +51,11 @@ def check(nombre, condicion, detalle=""):
                 print(f"           {linea}")
 
 
-def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None):
+def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None,
+         llave=LLAVE_POR_OMISION):
     print("=== probar_descifrado: el descifrado del hardware contra el modelo ===")
     print("")
+    print(f"  llave  {formato(llave)}")
 
     for ruta in (ruta_cifrado, ruta_volcado):
         if not Path(ruta).is_file():
@@ -71,7 +76,7 @@ def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None):
     claro = []
     for b in range(pal[1]):
         i = 2 + 2 * b
-        L, R = descifrar_bloque(pal[i], pal[i + 1])
+        L, R = descifrar_bloque(pal[i], pal[i + 1], llave)
         claro += [L, R]
     modelo = desempaquetar(pal[:2] + claro)
 
@@ -103,7 +108,19 @@ def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (4, 5):
-        print(__doc__)
-        sys.exit(2)
-    sys.exit(main(*sys.argv[1:]))
+    ap = argparse.ArgumentParser(
+        description="Compara el descifrado del hardware con el modelo")
+    ap.add_argument("cifrado")
+    ap.add_argument("volcado")
+    ap.add_argument("salida")
+    ap.add_argument("original", nargs="?", default=None)
+    ap.add_argument("--llave", default=None,
+                    help="la llave con que descifro el hardware")
+    args = ap.parse_args()
+    try:
+        clave = leer_llave(args.llave) if args.llave else LLAVE_POR_OMISION
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(main(args.cifrado, args.volcado, args.salida, args.original,
+                  clave))

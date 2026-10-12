@@ -56,7 +56,8 @@ reenvía resultados y no se detiene nunca.
 | Archivo a imagen de memoria | `tools/load_file.py` |
 | Volcado de memoria a archivo | `tools/extract_data.py` |
 | Formato del buffer, compartido por las dos | `tools/formato_buffer.py` |
-| Su arnés de pruebas, 39 casos | `tools/probar_archivos.py` |
+| Su arnés de pruebas, 48 casos | `tools/probar_archivos.py` |
+| La llave desde la línea de comandos, y sus 19 casos | `tools/llave.py`, `tools/probar_llave.py` |
 | El flujo completo contra un modelo de referencia, 7 casos | `tools/probar_flujo.py` |
 | Programa de cifrado Feistel4 de un bloque | `tools/programas/feistel.s` |
 | **Cifra un archivo completo** | `tools/programas/cifrar_archivo.s` |
@@ -151,6 +152,52 @@ el mismo segundo y `make` se salta el reensamblado. El resultado es una
 simulación que corre el binario anterior y falla sin motivo aparente. Ante
 cualquier resultado que no cuadre, `make clean && make`.
 
+### Cifrar un archivo con una llave dada
+
+La llave se da en la línea de comandos. No hace falta editar el ensamblador:
+
+```bash
+cd src/build
+make solo-cifrar ARCHIVO=../../archivo.txt LLAVE=A1B2C3D4,11223344,55667788,99AABBCC
+cmp criptograma.bin esperado.bin && echo COINCIDE
+```
+
+`LLAVE` funciona igual en `cifrar`, `solo-cifrar` y `solo-descifrar`.
+`tools/llave.py` genera en `src/build/llave_gen/` una copia de los programas de
+archivo con esa llave, y el testbench y el modelo de referencia reciben la
+misma. Sin `LLAVE` se usa la de `cargar_llave.s`. La salida imprime cómo quedó
+cada `key[i]` y los primeros bytes del criptograma.
+
+El criptograma queda en `src/build/criptograma.bin`, **sin cabecera**: es el
+archivo que se compara contra un resultado calculado por fuera del proyecto.
+`cifrado_libre.bin` es el mismo criptograma con la cabecera de 8 bytes que
+necesita `solo-descifrar`.
+
+**Convenciones.** El enunciado fija la función de ronda pero no cómo se arma un
+archivo en bloques. Si un resultado externo no coincide, la diferencia está en
+alguna de estas filas:
+
+| | Convención de este proyecto |
+| :--- | :--- |
+| Llave | La `key[4]` de la Fig. 1 del enunciado: la ronda `i` usa `key[i]`. Se escribe como cuatro palabras separadas por coma, con `key[0]` primero, o como 32 dígitos hexadecimales, donde los **primeros** ocho son `key[0]` |
+| Bloques | Little-endian. `L` son los bytes 0 a 3 del bloque y `R` los bytes 4 a 7, cada uno leído como entero de 32 bits con el primer byte en la parte baja. Es lo que hace `memcpy` en un programa en C en una PC |
+| Relleno | Ceros hasta completar un múltiplo de 8 bytes. Sólo afecta al último bloque |
+| Modo | Cada bloque se cifra por separado. Dos bloques iguales del archivo dan el mismo criptograma |
+| Salida | Los bloques completos: el criptograma mide el tamaño del archivo redondeado hacia arriba a múltiplo de 8 |
+| Tamaño máximo | 49 144 bytes, lo que cabe entre `0x4008` y el final de la memoria de datos |
+
+Con estas convenciones, el criptograma del procesador coincide byte por byte con
+el de la implementación en C de la Fig. 1 del enunciado. Se comprobó con un
+archivo binario de 20 003 bytes y la llave `A1B2C3D4 11223344 55667788
+99AABBCC`, compilando ese código C sin cambios.
+
+**La interfaz del enunciado (5.4.3) también funciona.** `load_file.py` acepta
+`--input`, `--output` y `--address`, y `extract_data.py` acepta `--memory`,
+`--address`, `--size` y `--output`, además de las opciones de siempre. Con
+`--size`, `extract_data.py` saca exactamente esa cantidad de bytes desde la
+dirección sin mirar la cabecera; como el buffer empieza con 8 bytes de
+cabecera, los datos de un archivo cargado en `0x4000` empiezan en `0x4008`.
+
 ---
 
 ## Cobertura actual
@@ -183,12 +230,13 @@ cualquier resultado que no cuadre, `make clean && make`.
 | `archivo` | 27 | **La cadena completa sobre un archivo real**: dos procesadores, uno cifra y el otro descifra lo que el primero dejó en memoria; criptograma contra valores calculados fuera del simulador, el archivo recuperado byte por byte, la cabecera intacta, y un barrido de los 64 KB de las dos memorias buscando subllaves filtradas |
 | **Total** | **1700** | |
 
-A eso se suman **107 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
+A eso se suman **145 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
 
 | | |
 |---|---|
 | `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
-| `probar_archivos.py` | 39 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, y el contenedor del archivo cifrado |
+| `probar_archivos.py` | 48 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, el contenedor del archivo cifrado y la interfaz del enunciado |
+| `probar_llave.py` | 19 casos: el orden de `key[0..3]` en las dos formas de escribir la llave, contra valores escritos a mano, y que el programa generado la arme en `r5` a `r8` |
 | `probar_flujo.py` | 7 casos: toma el volcado de `$writememh` que dejó `tb_archivo` o `tb_cifrado`, lo convierte en contenedor cifrado con `extract_data.py --cifrado` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
 
 El último es el que cierra el argumento. `tb_archivo` comprueba que el hardware
@@ -223,7 +271,9 @@ cerbero/
 │   ├── load_file.py             Archivo a imagen de DMEM
 │   ├── extract_data.py          Volcado de DMEM a archivo
 │   ├── formato_buffer.py        El formato que comparten las dos
-│   ├── probar_archivos.py       Sus pruebas, 39 casos
+│   ├── probar_archivos.py       Sus pruebas, 48 casos
+│   ├── llave.py                 La llave desde la línea de comandos
+│   ├── probar_llave.py          Sus pruebas, 19 casos
 │   ├── probar_flujo.py          El flujo completo contra el modelo de referencia
 │   ├── probar_descifrado.py     El descifrado del hardware contra el modelo
 │   └── programas/

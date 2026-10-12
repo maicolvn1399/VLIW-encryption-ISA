@@ -26,6 +26,9 @@
 // Con el plusarg +SOLO_CIFRAR corre solo el primer procesador y se salta los
 // puntos [3] a [5]. Es lo que usa "make solo-cifrar".
 //
+// Con +CIFRAR=, +DESCIFRAR= y +LLAVE= carga otros programas y busca otra llave
+// en el chequeo de aislamiento. Es lo que hace el makefile con LLAVE=.
+//
 // Autoprueba del arnes: compilar con -DFORCE_FAIL inyecta un caso
 // deliberadamente incorrecto.
 // =============================================================================
@@ -141,6 +144,16 @@ module tb_cifrado;
   integer n_bytes, n_bloques, n_palabras;
   logic   solo_cifrar;
 
+  // Los programas y la llave se pueden cambiar por plusarg; es lo que hace el
+  // makefile cuando se le da LLAVE=. key[0] va en los bits [127:96].
+  string        prog_cifrar, prog_descifrar;
+  logic [127:0] llave;
+
+  function automatic logic es_subllave(input logic [31:0] w);
+    return w === llave[127:96] || w === llave[95:64] ||
+           w === llave[63:32]  || w === llave[31:0];
+  endfunction
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("tb_cifrado.vcd");
@@ -148,14 +161,20 @@ module tb_cifrado;
     end
 
     solo_cifrar = $test$plusargs("SOLO_CIFRAR");
+    if (!$value$plusargs("CIFRAR=%s", prog_cifrar))
+      prog_cifrar = "../../tools/programas/cifrar_archivo.hex";
+    if (!$value$plusargs("DESCIFRAR=%s", prog_descifrar))
+      prog_descifrar = "../../tools/programas/descifrar_archivo.hex";
+    if (!$value$plusargs("LLAVE=%h", llave))
+      llave = 128'h1111_1111_2222_2222_3333_3333_4444_4444;
     rst_n = 1'b0;
 
     // Los bloques initial de imem y dmem barren sus arreglos a cero en el
     // tiempo 0, asi que la carga va un paso despues para no competir con ellos.
     #1;
-    $readmemh("../../tools/programas/cifrar_archivo.hex",    cif.u_imem.storage);
-    $readmemh("../../tools/programas/descifrar_archivo.hex", des.u_imem.storage);
-    $readmemh("archivo_libre.hex",                           cif.u_dmem.storage);
+    $readmemh(prog_cifrar,         cif.u_imem.storage);
+    $readmemh(prog_descifrar,      des.u_imem.storage);
+    $readmemh("archivo_libre.hex", cif.u_dmem.storage);
 
     for (i = 0; i < N_WORDS; i = i + 1)
       original[i] = cif.u_dmem.storage[i];
@@ -274,13 +293,15 @@ module tb_cifrado;
     $display("");
     $display("[6] aislamiento de la boveda");
     // ------------------------------------------------------------------------
-    // La llave es la que instala vault_sesion.s. Se recorre la memoria de datos
-    // completa de los dos procesadores, MENOS los datos del buffer.
+    // La llave es la que instala vault_sesion.s, o la de +LLAVE si se dio.
+    // Se recorre la memoria de datos completa de los dos procesadores, MENOS
+    // los datos del buffer.
     //
     // Los datos del buffer se excluyen porque con un archivo cualquiera pueden
-    // contener esos valores legitimamente. Con esta llave, un bloque de ocho
-    // bytes en cero se cifra como L=22222222 R=AAAAAAAA, y la mitad L coincide
-    // con la subllave k1; una imagen PNG trae decenas de bloques asi. Esas
+    // contener esos valores legitimamente. Con la llave por omision, un bloque
+    // de ocho bytes en cero se cifra como L=22222222 R=AAAAAAAA, y la mitad L
+    // coincide con la subllave k1; una imagen PNG trae decenas de bloques asi.
+    // Esas
     // palabras no quedan sin revisar: las cifradas las compara una por una el
     // modelo de referencia de probar_flujo.py, y las descifradas el punto [5].
     // Una subllave escrita en el buffer haria fallar cualquiera de los dos.
@@ -288,14 +309,8 @@ module tb_cifrado;
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
       if (i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras) continue;
-      if (cif.u_dmem.storage[i] === 32'h1111_1111 ||
-          cif.u_dmem.storage[i] === 32'h2222_2222 ||
-          cif.u_dmem.storage[i] === 32'h3333_3333 ||
-          cif.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
-      if (des.u_dmem.storage[i] === 32'h1111_1111 ||
-          des.u_dmem.storage[i] === 32'h2222_2222 ||
-          des.u_dmem.storage[i] === 32'h3333_3333 ||
-          des.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
+      if (es_subllave(cif.u_dmem.storage[i])) malos = malos + 1;
+      if (es_subllave(des.u_dmem.storage[i])) malos = malos + 1;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 

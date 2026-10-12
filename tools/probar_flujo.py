@@ -33,6 +33,7 @@ volcado de tb_cifrado.sv sobre un archivo cualquiera:
 
 """
 
+import argparse
 import contextlib
 import io
 import sys
@@ -41,15 +42,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_data                                   # noqa: E402
 import load_file                                      # noqa: E402
+from llave import LLAVE_POR_OMISION, formato, leer_llave  # noqa: E402
 from formato_buffer import (BASE_POR_OMISION, a_contenedor,  # noqa: E402
                             de_contenedor, desempaquetar, empaquetar,
                             leer_hex)
 
 AQUI = Path(__file__).resolve().parent
 ORIGINAL = AQUI / "programas" / "archivo_prueba.txt"
-
-# La llave que instala vault_sesion.s, una palabra por ronda
-LLAVE = [0x11111111, 0x22222222, 0x33333333, 0x44444444]
 
 M = 0xFFFFFFFF
 
@@ -87,21 +86,23 @@ def f_ronda(x, k):
     return ((rol(x, 5) + k) & M) ^ rol(x, 13)
 
 
-def descifrar_bloque(L, R):
+def descifrar_bloque(L, R, llave=LLAVE_POR_OMISION):
     for r in reversed(range(4)):
-        L, R = R ^ f_ronda(L, LLAVE[r]), L
+        L, R = R ^ f_ronda(L, llave[r]), L
     return L, R
 
 
-def cifrar_bloque(L, R):
+def cifrar_bloque(L, R, llave=LLAVE_POR_OMISION):
     for r in range(4):
-        L, R = R, L ^ f_ronda(R, LLAVE[r])
+        L, R = R, L ^ f_ronda(R, llave[r])
     return L, R
 
 
-def main(volcado, ruta_original=ORIGINAL):
+def main(volcado, ruta_original=ORIGINAL, llave=LLAVE_POR_OMISION,
+         crudo=None):
     print("=== probar_flujo: de archivo a archivo, sobre el volcado real ===")
     print("")
+    print(f"  llave    {formato(llave)}")
 
     ruta_original = Path(ruta_original)
     if not ruta_original.is_file():
@@ -144,7 +145,7 @@ def main(volcado, ruta_original=ORIGINAL):
     claro = []
     for b in range(n_bloques):
         i = 2 + 2 * b
-        L, R = descifrar_bloque(pal[i], pal[i + 1])
+        L, R = descifrar_bloque(pal[i], pal[i + 1], llave)
         claro += [L, R]
     recuperado = desempaquetar(pal[:2] + claro)
 
@@ -157,7 +158,7 @@ def main(volcado, ruta_original=ORIGINAL):
     esperado = pal_claro[:2]
     for b in range(pal_claro[1]):
         i = 2 + 2 * b
-        L, R = cifrar_bloque(pal_claro[i], pal_claro[i + 1])
+        L, R = cifrar_bloque(pal_claro[i], pal_claro[i + 1], llave)
         esperado += [L, R]
 
     check("y cifra bloque por bloque lo mismo que el hardware",
@@ -178,11 +179,25 @@ def main(volcado, ruta_original=ORIGINAL):
           f"devolvio {r}")
     recarga.unlink(missing_ok=True)
 
+    # --- el criptograma solo, sin la cabecera -------------------------------
+    # Es lo que se compara contra un resultado calculado por fuera: la
+    # cabecera es una convencion de este proyecto y no forma parte del cifrado
+    criptograma = contenedor[8:]
+    if crudo is not None:
+        Path(crudo).write_bytes(criptograma)
+
     print("")
-    print(f"  claro    {original[:64]!r}")
-    print(f"  cifrado  {contenedor[:64].hex()}")
-    if len(contenedor) > 64:
-        print(f"           (primeros 64 de {len(contenedor)} bytes)")
+    print(f"  claro        {original[:64]!r}")
+    print(f"  criptograma  {len(criptograma)} bytes en {n_bloques} bloques, "
+          f"sin la cabecera:")
+    for i in range(0, min(len(criptograma), 64), 16):
+        fila = criptograma[i:i + 16]
+        print(f"    {i:08x}  " + " ".join(fila[j:j + 4].hex()
+                                          for j in range(0, len(fila), 4)))
+    if len(criptograma) > 64:
+        print(f"    (primeros 64 de {len(criptograma)} bytes)")
+    if crudo is not None:
+        print(f"  escrito en   {crudo}")
     print("")
     print("---")
     print(f"casos: {casos}   fallidos: {fallidos}")
@@ -194,6 +209,18 @@ def main(volcado, ruta_original=ORIGINAL):
 
 
 if __name__ == "__main__":
-    volcado = sys.argv[1] if len(sys.argv) > 1 else "cifrado_volcado.hex"
-    original = sys.argv[2] if len(sys.argv) > 2 else ORIGINAL
-    sys.exit(main(volcado, original))
+    ap = argparse.ArgumentParser(
+        description="Compara el cifrado del hardware con el modelo")
+    ap.add_argument("volcado", nargs="?", default="cifrado_volcado.hex")
+    ap.add_argument("original", nargs="?", default=str(ORIGINAL))
+    ap.add_argument("--llave", default=None,
+                    help="la llave con que cifro el hardware, como en llave.py")
+    ap.add_argument("--crudo", default=None,
+                    help="escribe aqui el criptograma sin la cabecera")
+    args = ap.parse_args()
+    try:
+        clave = leer_llave(args.llave) if args.llave else LLAVE_POR_OMISION
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(main(args.volcado, args.original, clave, args.crudo))

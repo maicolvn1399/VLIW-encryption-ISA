@@ -137,6 +137,9 @@ herramientas:
 	@echo ""
 	@echo "---- pruebas de load_file y extract_data ----"
 	python3 $(TOOLS)/probar_archivos.py
+	@echo ""
+	@echo "---- pruebas de llave.py ----"
+	python3 $(TOOLS)/probar_llave.py
 
 sim: $(UNITS)
 	@echo ""
@@ -152,7 +155,7 @@ list:
 $(UNITS): %: tb_%.vvp
 	@echo ""
 	@echo "---- $* ----"
-	$(VVP) -n $< +VCD=tb_$*.vcd
+	$(VVP) -n $< +VCD=tb_$*.vcd $(PLUS_$*)
 
 # Compilacion: paquetes + modulo + dependencias + testbench
 .SECONDARY:
@@ -218,25 +221,61 @@ ARCHIVO ?= $(PROGS)/archivo_prueba.txt
 archivo_libre.hex:
 	python3 $(TOOLS)/load_file.py $(ARCHIVO) -o $@ --palabras 16384
 
-cifrado: archivo_libre.hex
+# ---- Cifrar con otra llave ----------------------------------------------------
+#   make solo-cifrar ARCHIVO=... LLAVE=A1B2C3D4,11223344,55667788,99AABBCC
+#   make solo-cifrar ARCHIVO=... LLAVE=A1B2C3D4112233445566778899AABBCC
+#
+# LLAVE funciona en cifrar, solo-cifrar y solo-descifrar. Es la key[4] de la
+# referencia del enunciado: key[0] primero, sea en cuatro palabras o en los
+# primeros ocho de 32 digitos. llave.py genera en llave_gen/ una copia de los
+# programas con esa llave, y el testbench y el modelo de referencia reciben la
+# misma, asi que la llave se escribe en un solo lugar. Sin LLAVE se usa la de
+# cargar_llave.s y no se genera nada.
+LLAVE ?=
+LLAVE_DIR := llave_gen
+
+ifneq ($(strip $(LLAVE)),)
+PROGRAMAS_LLAVE := programas-llave
+PLUS_LLAVE      := +CIFRAR=$(LLAVE_DIR)/cifrar_archivo.hex \
+                   +DESCIFRAR=$(LLAVE_DIR)/descifrar_archivo.hex \
+                   +LLAVE=$(shell python3 $(TOOLS)/llave.py "$(LLAVE)" --hex)
+ARG_LLAVE       := --llave "$(LLAVE)"
+endif
+PLUS_cifrado := $(PLUS_LLAVE)
+
+.PHONY: programas-llave
+programas-llave:
+	python3 $(TOOLS)/llave.py "$(LLAVE)" --salida $(LLAVE_DIR)
+	$(ASM) $(LLAVE_DIR)/cifrar_archivo.s -o $(LLAVE_DIR)/cifrar_archivo.hex \
+	       --bundles 2048
+	$(ASM) $(LLAVE_DIR)/descifrar_archivo.s -o $(LLAVE_DIR)/descifrar_archivo.hex \
+	       --bundles 2048
+
+# El criptograma sin la cabecera, que es lo que se compara contra un
+# resultado calculado por fuera del proyecto
+CRIPTOGRAMA := criptograma.bin
+
+cifrado: archivo_libre.hex $(PROGRAMAS_LLAVE)
 
 cifrar: cifrado
 	@echo ""
 	@echo "---- flujo completo sobre $(ARCHIVO) ----"
-	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO)
+	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO) \
+	        --crudo $(CRIPTOGRAMA) $(ARG_LLAVE)
 
 # Solo el cifrado: el segundo procesador no arranca. El criptograma lo sigue
 # verificando probar_flujo.py contra el modelo de referencia, que no necesita
 # del descifrado del hardware.
 #   make solo-cifrar ARCHIVO=../../tools/programas/mi_texto.txt
 .PHONY: solo-cifrar
-solo-cifrar: tb_cifrado.vvp archivo_libre.hex
+solo-cifrar: tb_cifrado.vvp archivo_libre.hex $(PROGRAMAS_LLAVE)
 	@echo ""
 	@echo "---- solo cifrar $(ARCHIVO) ----"
-	$(VVP) -n tb_cifrado.vvp +SOLO_CIFRAR
+	$(VVP) -n tb_cifrado.vvp +SOLO_CIFRAR $(PLUS_LLAVE)
 	@echo ""
 	@echo "---- el criptograma contra el modelo de referencia ----"
-	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO)
+	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO) \
+	        --crudo $(CRIPTOGRAMA) $(ARG_LLAVE)
 
 # Solo el descifrado, partiendo de un archivo cifrado en disco. Por omision
 # toma el que deja "make solo-cifrar"; con ORIGINAL, tambien compara contra el.
@@ -250,14 +289,14 @@ ORIGINAL ?=
 contenedor_libre.hex:
 	python3 $(TOOLS)/load_file.py $(CIFRADO) -o $@ --palabras 16384 --cifrado
 
-solo-descifrar: tb_descifrado.vvp contenedor_libre.hex
+solo-descifrar: tb_descifrado.vvp contenedor_libre.hex $(PROGRAMAS_LLAVE)
 	@echo ""
 	@echo "---- solo descifrar $(CIFRADO) ----"
-	$(VVP) -n tb_descifrado.vvp
+	$(VVP) -n tb_descifrado.vvp $(PLUS_LLAVE)
 	@echo ""
 	@echo "---- el descifrado contra el modelo de referencia ----"
 	python3 $(TOOLS)/probar_descifrado.py $(CIFRADO) descifrado_libre.hex \
-	        descifrado_libre.bin $(ORIGINAL)
+	        descifrado_libre.bin $(ORIGINAL) $(ARG_LLAVE)
 
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:
@@ -290,4 +329,6 @@ clean:
 	rm -f *.vvp *.vcd cifrado_volcado.hex cifrado_volcado.bin
 	rm -f archivo_libre.hex cifrado_libre.hex cifrado_libre.bin
 	rm -f contenedor_libre.hex descifrado_libre.hex descifrado_libre.bin
+	rm -f criptograma.bin
+	rm -rf llave_gen
 	rm -f $(PROGS)/*.hex

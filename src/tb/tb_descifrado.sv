@@ -27,6 +27,9 @@
 // La imagen entra por contenedor_libre.hex, en el directorio de build, y la
 // produce el makefile a partir de la variable CIFRADO.
 //
+// Con +DESCIFRAR= y +LLAVE= carga otro programa y busca otra llave en el
+// chequeo de aislamiento. Es lo que hace el makefile con LLAVE=.
+//
 // Autoprueba del arnes: compilar con -DFORCE_FAIL inyecta un caso
 // deliberadamente incorrecto.
 // =============================================================================
@@ -122,19 +125,33 @@ module tb_descifrado;
   integer i, c, malos, limite;
   integer n_bytes, n_bloques, n_palabras;
 
+  // El programa y la llave se pueden cambiar por plusarg. key[0] va en los
+  // bits [127:96].
+  string        prog_descifrar;
+  logic [127:0] llave;
+
+  function automatic logic es_subllave(input logic [31:0] w);
+    return w === llave[127:96] || w === llave[95:64] ||
+           w === llave[63:32]  || w === llave[31:0];
+  endfunction
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("tb_descifrado.vcd");
       $dumpvars(0, tb_descifrado);
     end
 
+    if (!$value$plusargs("DESCIFRAR=%s", prog_descifrar))
+      prog_descifrar = "../../tools/programas/descifrar_archivo.hex";
+    if (!$value$plusargs("LLAVE=%h", llave))
+      llave = 128'h1111_1111_2222_2222_3333_3333_4444_4444;
     rst_n = 1'b0;
 
     // Los bloques initial de imem y dmem barren sus arreglos a cero en el
     // tiempo 0, asi que la carga va un paso despues para no competir con ellos.
     #1;
-    $readmemh("../../tools/programas/descifrar_archivo.hex", des.u_imem.storage);
-    $readmemh("contenedor_libre.hex",                        des.u_dmem.storage);
+    $readmemh(prog_descifrar,         des.u_imem.storage);
+    $readmemh("contenedor_libre.hex", des.u_dmem.storage);
 
     n_bytes    = des.u_dmem.storage[W_BUF];
     n_bloques  = des.u_dmem.storage[W_BUF + 1];
@@ -190,7 +207,8 @@ module tb_descifrado;
     $display("");
     $display("[3] aislamiento de la boveda");
     // ------------------------------------------------------------------------
-    // La llave es la que arma cargar_llave.s. Los datos del buffer se excluyen
+    // La llave es la que arma cargar_llave.s, o la de +LLAVE si se dio. Los
+    // datos del buffer se excluyen
     // por el mismo motivo que en tb_cifrado.sv: con un archivo cualquiera
     // pueden traer esos valores legitimamente, y probar_descifrado.py los
     // compara uno por uno contra el modelo de referencia.
@@ -198,10 +216,7 @@ module tb_descifrado;
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
       if (i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras) continue;
-      if (des.u_dmem.storage[i] === 32'h1111_1111 ||
-          des.u_dmem.storage[i] === 32'h2222_2222 ||
-          des.u_dmem.storage[i] === 32'h3333_3333 ||
-          des.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
+      if (es_subllave(des.u_dmem.storage[i])) malos = malos + 1;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 
