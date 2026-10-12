@@ -97,11 +97,14 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # pruebas de las herramientas, los veinticuatro testbenches y el flujo
+make            # pruebas de las herramientas, los veinticinco testbenches y el flujo
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
 make archivo    # cifra y descifra un archivo completo sobre el RTL
 make flujo      # y lo descifra con un modelo de referencia en Python
+make cifrar ARCHIVO=ruta  # lo mismo, sobre un archivo cualquiera
+make solo-cifrar ARCHIVO=ruta  # solo el cifrado, verificado contra el modelo
+make solo-descifrar ORIGINAL=ruta  # descifra el .bin que dejo solo-cifrar
 make asm        # ensambla feistel.s y corre el binario en el RTL
 make herramientas  # solo las pruebas de las herramientas en Python
 make div        # corre la subrutina de división en el procesador
@@ -185,7 +188,7 @@ A eso se suman **107 casos** de las herramientas en Python, que `make` corre ant
 |---|---|
 | `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
 | `probar_archivos.py` | 39 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, y el contenedor del archivo cifrado |
-| `probar_flujo.py` | 7 casos: toma el volcado de `$writememh` que dejó `tb_archivo`, lo convierte en contenedor cifrado con `extract_data.py --cifrado` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
+| `probar_flujo.py` | 7 casos: toma el volcado de `$writememh` que dejó `tb_archivo` o `tb_cifrado`, lo convierte en contenedor cifrado con `extract_data.py --cifrado` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
 
 El último es el que cierra el argumento. `tb_archivo` comprueba que el hardware
 descifra lo que cifró, pero eso se cumpliría igual si `F4E` y `F4D` estuvieran
@@ -221,6 +224,7 @@ cerbero/
 │   ├── formato_buffer.py        El formato que comparten las dos
 │   ├── probar_archivos.py       Sus pruebas, 39 casos
 │   ├── probar_flujo.py          El flujo completo contra el modelo de referencia
+│   ├── probar_descifrado.py     El descifrado del hardware contra el modelo
 │   └── programas/
 │       ├── feistel.s            Cifrado de un bloque con sesión de bóveda
 │       ├── cifrar_archivo.s     Cifra un archivo completo, bloque por bloque
@@ -265,6 +269,8 @@ cerbero/
         ├── tb_asm.sv            El binario del ensamblador sobre el RTL
         ├── tb_div.sv            La subrutina de división sobre el RTL
         ├── tb_archivo.sv        Cifrado y descifrado de un archivo completo
+        ├── tb_cifrado.sv        Lo mismo sobre un archivo cualquiera
+        ├── tb_descifrado.sv     Descifrar un archivo cifrado que viene de disco
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```

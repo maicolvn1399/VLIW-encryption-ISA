@@ -52,7 +52,9 @@ PROGS := $(TOOLS)/programas
 ASM   := python3 $(TOOLS)/cerbero_asm.py
 
 PKGS  := $(wildcard $(CPU)/*_pkg.sv)
-UNITS := $(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv))
+# tb_descifrado necesita un archivo cifrado de entrada, asi que no entra en
+# "make sim": se corre con "make solo-descifrar".
+UNITS := $(filter-out descifrado,$(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv)))
 
 # Unidades con modulo propio en ../cpu. Se excluyen los testbenches de
 # integracion, que no tienen un ../cpu/<nombre>.sv detras.
@@ -85,6 +87,15 @@ DEPS_archivo      := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/cifrar_archivo.hex \
                      $(PROGS)/descifrar_archivo.hex \
                      $(PROGS)/archivo_prueba.hex
+# tb_cifrado carga los mismos dos programas; la imagen del archivo la lee en
+# tiempo de simulacion, asi que va como requisito de la corrida, no de aqui
+DEPS_cifrado      := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/cifrar_archivo.hex \
+                     $(PROGS)/descifrar_archivo.hex
+# tb_descifrado carga el contenedor en tiempo de simulacion, igual que
+# tb_cifrado carga el archivo
+DEPS_descifrado   := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/descifrar_archivo.hex
 
 # ---- Opciones de compilacion por unidad -------------------------------------
 # tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
@@ -96,7 +107,8 @@ XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
-NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo
+NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo cifrado \
+          descifrado
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -188,6 +200,61 @@ flujo: archivo
 	@echo "---- flujo completo de archivo a archivo ----"
 	python3 $(TOOLS)/probar_flujo.py cifrado_volcado.hex
 
+# ---- Cifrar un archivo cualquiera ---------------------------------------------
+#   make cifrar ARCHIVO=../../tools/programas/mi_texto.txt
+#
+# tb_archivo tiene escrito el criptograma de archivo_prueba.txt, asi que solo
+# sirve para ese archivo. tb_cifrado no trae valores fijos y probar_flujo.py
+# hace de oraculo con su modelo de referencia. Sin ARCHIVO usa el de prueba.
+ARCHIVO ?= $(PROGS)/archivo_prueba.txt
+
+# Se regenera en cada corrida: si solo cambia la variable ARCHIVO, make no
+# veria ningun archivo mas nuevo y cargaria la imagen anterior.
+.PHONY: archivo_libre.hex cifrar
+archivo_libre.hex:
+	python3 $(TOOLS)/load_file.py $(ARCHIVO) -o $@ --palabras 16384
+
+cifrado: archivo_libre.hex
+
+cifrar: cifrado
+	@echo ""
+	@echo "---- flujo completo sobre $(ARCHIVO) ----"
+	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO)
+
+# Solo el cifrado: el segundo procesador no arranca. El criptograma lo sigue
+# verificando probar_flujo.py contra el modelo de referencia, que no necesita
+# del descifrado del hardware.
+#   make solo-cifrar ARCHIVO=../../tools/programas/mi_texto.txt
+.PHONY: solo-cifrar
+solo-cifrar: tb_cifrado.vvp archivo_libre.hex
+	@echo ""
+	@echo "---- solo cifrar $(ARCHIVO) ----"
+	$(VVP) -n tb_cifrado.vvp +SOLO_CIFRAR
+	@echo ""
+	@echo "---- el criptograma contra el modelo de referencia ----"
+	python3 $(TOOLS)/probar_flujo.py cifrado_libre.hex $(ARCHIVO)
+
+# Solo el descifrado, partiendo de un archivo cifrado en disco. Por omision
+# toma el que deja "make solo-cifrar"; con ORIGINAL, tambien compara contra el.
+#   make solo-descifrar
+#   make solo-descifrar CIFRADO=cifrado_libre.bin ORIGINAL=../../mi_texto.txt
+# El archivo descifrado queda en descifrado_libre.bin.
+CIFRADO  ?= cifrado_libre.bin
+ORIGINAL ?=
+
+.PHONY: solo-descifrar contenedor_libre.hex
+contenedor_libre.hex:
+	python3 $(TOOLS)/load_file.py $(CIFRADO) -o $@ --palabras 16384 --cifrado
+
+solo-descifrar: tb_descifrado.vvp contenedor_libre.hex
+	@echo ""
+	@echo "---- solo descifrar $(CIFRADO) ----"
+	$(VVP) -n tb_descifrado.vvp
+	@echo ""
+	@echo "---- el descifrado contra el modelo de referencia ----"
+	python3 $(TOOLS)/probar_descifrado.py $(CIFRADO) descifrado_libre.hex \
+	        descifrado_libre.bin $(ORIGINAL)
+
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:
 	@echo "---- cobertura del conjunto de instrucciones ----"
@@ -216,5 +283,7 @@ $(LINT_TARGETS): lint-%:
 # dejar el .hex anterior en pie, y la simulacion correria el programa viejo sin
 # que nada avise. Con "make clean && make" eso no puede pasar.
 clean:
-	rm -f *.vvp *.vcd cifrado_volcado.hex
+	rm -f *.vvp *.vcd cifrado_volcado.hex cifrado_volcado.bin
+	rm -f archivo_libre.hex cifrado_libre.hex cifrado_libre.bin
+	rm -f contenedor_libre.hex descifrado_libre.hex descifrado_libre.bin
 	rm -f $(PROGS)/*.hex
