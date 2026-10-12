@@ -191,10 +191,10 @@ module tb_credencial;
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
       if (i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras) continue;
-      if (dut.u_dmem.storage[i] === 32'h9E37_79B9 ||
-          dut.u_dmem.storage[i] === 32'h7F4A_7C15 ||
-          dut.u_dmem.storage[i] === 32'hC2B2_AE35 ||
-          dut.u_dmem.storage[i] === 32'h27D4_EB2F) malos = malos + 1;
+      if (dut.u_dmem.storage[i] === 32'h1111_1111 ||
+          dut.u_dmem.storage[i] === 32'h2222_2222 ||
+          dut.u_dmem.storage[i] === 32'h3333_3333 ||
+          dut.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 

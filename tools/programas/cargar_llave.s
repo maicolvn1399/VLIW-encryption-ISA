@@ -35,16 +35,15 @@
         movi r1, #0x3210 | movi r2, #0xBA98 ;
         movi r3, #0xCDEF | movi r4, #0x4567 ;
 
-// Llave de 128 bits, una palabra por ronda:
-//   9E3779B9 7F4A7C15 C2B2AE35 27D4EB2F
-        movi r5, #0x79B9 | movi r6, #0x7C15 ;
-        movi r7, #0xAE35 | movi r8, #0xEB2F ;
+// Llave de 128 bits, una palabra por ronda
+        movi r5, #0x1111 | movi r6, #0x2222 ;
+        movi r7, #0x3333 | movi r8, #0x4444 ;
 
 // Mitades altas. El MOVI de R1 quedo cuatro bundles atras.
         movh r1, #0x7654 | movh r2, #0xFEDC ;
         movh r3, #0x89AB | movh r4, #0x0123 ;
-        movh r5, #0x9E37 | movh r6, #0x7F4A ;
-        movh r7, #0xC2B2 | movh r8, #0x27D4 ;
+        movh r5, #0x1111 | movh r6, #0x2222 ;
+        movh r7, #0x3333 | movh r8, #0x4444 ;
 
 // Cabecera del buffer: la cantidad de bloques de 64 bits vive en 0x4004, y los
 // datos arrancan en 0x4008. El formato lo fija tools/formato_buffer.py.

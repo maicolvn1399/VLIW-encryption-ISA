@@ -278,10 +278,9 @@ module tb_cifrado;
     // completa de los dos procesadores, MENOS los datos del buffer.
     //
     // Los datos del buffer se excluyen porque con un archivo cualquiera pueden
-    // contener esos valores legitimamente. Con la llave anterior, 11111111
-    // 22222222 33333333 44444444, un bloque de ocho bytes en cero se cifraba
-    // como L=22222222 R=AAAAAAAA, y la mitad L coincidia con la subllave k1;
-    // una imagen PNG trae decenas de bloques asi. Esas
+    // contener esos valores legitimamente. Con esta llave, un bloque de ocho
+    // bytes en cero se cifra como L=22222222 R=AAAAAAAA, y la mitad L coincide
+    // con la subllave k1; una imagen PNG trae decenas de bloques asi. Esas
     // palabras no quedan sin revisar: las cifradas las compara una por una el
     // modelo de referencia de probar_flujo.py, y las descifradas el punto [5].
     // Una subllave escrita en el buffer haria fallar cualquiera de los dos.
@@ -289,14 +288,14 @@ module tb_cifrado;
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
       if (i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras) continue;
-      if (cif.u_dmem.storage[i] === 32'h9E37_79B9 ||
-          cif.u_dmem.storage[i] === 32'h7F4A_7C15 ||
-          cif.u_dmem.storage[i] === 32'hC2B2_AE35 ||
-          cif.u_dmem.storage[i] === 32'h27D4_EB2F) malos = malos + 1;
-      if (des.u_dmem.storage[i] === 32'h9E37_79B9 ||
-          des.u_dmem.storage[i] === 32'h7F4A_7C15 ||
-          des.u_dmem.storage[i] === 32'hC2B2_AE35 ||
-          des.u_dmem.storage[i] === 32'h27D4_EB2F) malos = malos + 1;
+      if (cif.u_dmem.storage[i] === 32'h1111_1111 ||
+          cif.u_dmem.storage[i] === 32'h2222_2222 ||
+          cif.u_dmem.storage[i] === 32'h3333_3333 ||
+          cif.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
+      if (des.u_dmem.storage[i] === 32'h1111_1111 ||
+          des.u_dmem.storage[i] === 32'h2222_2222 ||
+          des.u_dmem.storage[i] === 32'h3333_3333 ||
+          des.u_dmem.storage[i] === 32'h4444_4444) malos = malos + 1;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 
