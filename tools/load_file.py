@@ -12,6 +12,11 @@ dmem.sv.
     load_file.py entrada.txt -o datos.hex
     load_file.py foto.png -o datos.hex --base 0x4000 --palabras 16384
     load_file.py cifrado.bin -o datos.hex --cifrado
+    load_file.py --input archivo.txt --output memory.mem --address 0x4000
+
+La ultima forma es la del enunciado (5.4.3). Las opciones en ingles son
+sinonimos de las de siempre: --input de la entrada, --output de -o y --address
+de --base.
 
 El formato del buffer esta en formato_buffer.py, que es el mismo modulo que usa
 extract_data.py para leerlo de vuelta.
@@ -44,10 +49,16 @@ from formato_buffer import (BASE_POR_OMISION, BYTES_POR_BLOQUE,   # noqa: E402
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Convierte un archivo en una imagen de DMEM para CERBERO-1")
-    ap.add_argument("entrada", help="archivo a cargar")
-    ap.add_argument("-o", "--salida", required=True,
+    # Los nombres en ingles son los de la interfaz del enunciado (5.4.3); los
+    # en espanol son los de siempre. Los dos funcionan igual.
+    ap.add_argument("entrada", nargs="?", default=None,
+                    help="archivo a cargar")
+    ap.add_argument("--input", dest="input_", default=None,
+                    help="lo mismo que la entrada posicional")
+    ap.add_argument("-o", "--salida", "--output", dest="salida", required=True,
                     help="archivo .hex de salida, para $readmemh")
-    ap.add_argument("--base", default=hex(BASE_POR_OMISION),
+    ap.add_argument("--base", "--address", dest="base",
+                    default=hex(BASE_POR_OMISION),
                     help="direccion de byte donde arranca el buffer "
                          f"(por omision {BASE_POR_OMISION:#x}, la region de "
                          "buffers del mapa de memoria)")
@@ -59,17 +70,22 @@ def main(argv=None):
                          "--cifrado: se carga tal cual, sin cabecera nueva")
     args = ap.parse_args(argv)
 
+    if (args.entrada is None) == (args.input_ is None):
+        print("error: el archivo de entrada se da una vez, como argumento o "
+              "con --input", file=sys.stderr)
+        return 2
+    entrada = args.entrada if args.entrada is not None else args.input_
+
     base = int(args.base, 0)
     if base % 4:
         print(f"error: la base {base:#x} no esta alineada a palabra",
               file=sys.stderr)
         return 2
 
-    if not Path(args.entrada).is_file():
-        print(f"error: no se encontro el archivo {args.entrada}",
-              file=sys.stderr)
+    if not Path(entrada).is_file():
+        print(f"error: no se encontro el archivo {entrada}", file=sys.stderr)
         return 1
-    datos = Path(args.entrada).read_bytes()
+    datos = Path(entrada).read_bytes()
     if args.cifrado:
         try:
             cuerpo = de_contenedor(datos)
@@ -89,7 +105,7 @@ def main(argv=None):
 
     total = escribir_hex(args.salida, palabras, args.palabras)
 
-    print(f"{args.entrada}: {len(datos)} bytes")
+    print(f"{entrada}: {len(datos)} bytes")
     print(f"  base            {base:#010x}")
     print(f"  bloques de 64 b {cuerpo[1]}")
     if args.cifrado:

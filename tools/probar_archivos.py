@@ -302,6 +302,62 @@ with callado(), contextlib.redirect_stderr(io.StringIO()):
     r = load_file.main([str(malo), "-o", str(tmp / "s.hex"), "--cifrado"])
 check("y uno que no mide un multiplo de palabra", r == 1, r)
 
+print("")
+print("[7] la interfaz que muestra el enunciado (5.4.3)")
+
+# Los comandos se escriben igual que en el enunciado, cambiando solo las rutas
+archivo = tmp / "archivo.txt"
+archivo.write_bytes(b"hola, enunciado")
+con_opciones = tmp / "memory.mem"
+posicional = tmp / "posicional.mem"
+with callado():
+    r1 = load_file.main(["--input", str(archivo), "--output", str(con_opciones),
+                         "--address", "0x1000"])
+    r2 = load_file.main([str(archivo), "-o", str(posicional),
+                         "--base", "0x1000"])
+check("load_file --input --output --address funciona",
+      r1 == 0, r1)
+check("y produce lo mismo que la forma posicional",
+      r2 == 0 and con_opciones.read_text() == posicional.read_text())
+check("el buffer queda en la direccion pedida, 0x1000",
+      leer_hex(con_opciones)[0x400:0x402] == [len(b"hola, enunciado"), 2],
+      leer_hex(con_opciones)[0x400:0x402])
+
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main(["--output", str(con_opciones)])
+check("load_file sin archivo de entrada termina con error", r == 2, r)
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main([str(archivo), "--input", str(archivo),
+                        "--output", str(con_opciones)])
+check("y con la entrada dada dos veces tambien", r == 2, r)
+
+# extract_data --size saca exactamente esa cantidad de bytes desde la
+# direccion, sin mirar la cabecera, como pide el enunciado
+volcado = tmp / "memory_dump.txt"
+escribir_hex(volcado, [0] * 0x800 + [0x44332211, 0x88776655, 0xCCBBAA99])
+resultado = tmp / "resultado.bin"
+with callado():
+    r = extract_data.main(["--memory", str(volcado), "--address", "0x2000",
+                           "--size", "10", "--output", str(resultado)])
+check("extract_data --memory --address --size --output funciona", r == 0, r)
+check("y saca exactamente esos bytes desde esa direccion",
+      resultado.exists() and resultado.read_bytes()
+      == bytes([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA]),
+      resultado.read_bytes() if resultado.exists() else None)
+
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = extract_data.main(["--memory", str(volcado), "--address", "0x2000",
+                           "--size", "13", "--output", str(resultado)])
+check("--size mas alla del final del volcado termina con error", r == 1, r)
+
+# Y la forma de siempre sigue funcionando con los nombres nuevos
+with callado():
+    r = extract_data.main(["--memory", str(con_opciones), "--address",
+                           "0x1000", "--output", str(resultado)])
+check("--memory sin --size recupera el archivo por su cabecera",
+      r == 0 and resultado.read_bytes() == b"hola, enunciado",
+      resultado.read_bytes())
+
 print("---")
 print(f"casos: {casos}   fallidos: {fallidos}")
 if fallidos:
