@@ -52,8 +52,13 @@ reenvía resultados y no se detiene nunca.
 | | |
 |---|---|
 | Ensamblador propio | `tools/cerbero_asm.py` |
-| Su arnés de pruebas, 66 casos | `tools/probar_asm.py` |
+| Su arnés de pruebas, 71 casos | `tools/probar_asm.py` |
+| Archivo a imagen de memoria | `tools/load_file.py` |
+| Volcado de memoria a archivo | `tools/extract_data.py` |
+| Formato del buffer, compartido por las dos | `tools/formato_buffer.py` |
+| Su arnés de pruebas, 31 casos | `tools/probar_archivos.py` |
 | Programa de cifrado Feistel4 | `tools/programas/feistel.s` |
+| Subrutina de división de 32 bits | `tools/programas/div32.s` |
 | Programa que usa el 100% del conjunto | `tools/programas/cobertura.s` |
 
 Las tres unidades de S3 se excluyen entre sí: el opcode del slot decide cuál
@@ -87,11 +92,12 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # pruebas del ensamblador y los veintidós testbenches
+make            # pruebas de las herramientas y los veintitrés testbenches
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
 make asm        # ensambla feistel.s y corre el binario en el RTL
-make herramientas  # solo las pruebas del ensamblador
+make herramientas  # solo las pruebas de las herramientas en Python
+make div        # corre la subrutina de división en el procesador
 make cobertura  # comprueba que se usa el 100% del conjunto
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
@@ -116,10 +122,16 @@ RESULTADO: OK
 ```
 
 `tb_imem` y `tb_dmem` imprimen un aviso de Icarus, `Not enough words in the
-file for the requested range`. Es esperado: los archivos de ejemplo traen menos
-palabras que la memoria, y comprobar que las posiciones restantes quedan en
-cero es justamente uno de los casos. Las posiciones que el archivo no cubre no
-quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
+file for the requested range`. **Esos dos son esperados y son los únicos dos que
+debe haber**: los archivos de ejemplo traen menos palabras que la memoria, y
+comprobar que las posiciones restantes quedan en cero es justamente uno de los
+casos. No quedan indefinidas porque el módulo barre el arreglo a cero antes de
+leer el archivo.
+
+El aviso contrario, `Too many words`, nunca es intencional: significa que el
+relleno con que el ensamblador generó el `.hex` no coincide con el tamaño de la
+memoria del testbench que lo carga. El makefile declara el tamaño de cada
+programa por separado (`BUNDLES_<programa>`) para que los dos números cuadren.
 
 ---
 
@@ -149,13 +161,19 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `fetch_flow` | 23 | **Integración**: `fetch`, `imem`, `reg_if_id` y `bru` sobre un programa de saltos; un delay slot exacto por salto, el de `HALT` se ejecuta, y el caso medido de un salto dentro de un delay slot |
 | `top` | 45 | **El procesador completo** corriendo siete programas: aritmética con la latencia de 3 bundles, memoria en los tres tamaños con y sin signo, llamada y retorno, **cifrado Feistel4 completo** contra valores calculados fuera del simulador, la misma rutina denegada fuera de la región segura, `ILLOP` y `MISALIGN`, y que nada se ejecute después de `HALT` |
 | `asm` | 12 | **La cadena completa**: el binario que produce `cerbero_asm.py` desde `feistel.s`, corriendo en el RTL, cifrando bien y con el cierre automático de sesión al salir de la región segura |
-| **Total** | **1658** | |
+| `div` | 15 | **La subrutina de división** corriendo en el procesador: seis pares, con divisor cero y con el bit 31 encendido |
+| **Total** | **1673** | |
 
-A eso se suman los **66 casos** de `tools/probar_asm.py`, que prueban el ensamblador: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos.
+A eso se suman **102 casos** de las herramientas en Python, que `make` corre antes de los testbenches:
+
+| | |
+|---|---|
+| `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
+| `probar_archivos.py` | 31 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, y lo que debe fallar |
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los veintidós aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los veintitrés aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -175,9 +193,15 @@ cerbero/
 │   └── isa.md                   Especificación del ISA (contrato con CE1108)
 ├── tools/
 │   ├── cerbero_asm.py           Ensamblador propio
-│   ├── probar_asm.py            Sus pruebas, 66 casos
+│   ├── probar_asm.py            Sus pruebas, 71 casos
+│   ├── load_file.py             Archivo a imagen de DMEM
+│   ├── extract_data.py          Volcado de DMEM a archivo
+│   ├── formato_buffer.py        El formato que comparten las dos
+│   ├── probar_archivos.py       Sus pruebas, 31 casos
 │   └── programas/
 │       ├── feistel.s            Cifrado de un bloque con sesión de bóveda
+│       ├── div32.s              Subrutina de división sin signo
+│       ├── div32_prueba.s       Seis pares para probarla
 │       └── cobertura.s          Usa el 100% del conjunto de instrucciones
 └── src/
     ├── build/
@@ -211,6 +235,7 @@ cerbero/
         ├── tb_fetch_flow.sv     Búsqueda, delay slot y HALT con la BRU real
         ├── tb_top.sv            Siete programas sobre el procesador completo
         ├── tb_asm.sv            El binario del ensamblador sobre el RTL
+        ├── tb_div.sv            La subrutina de división sobre el RTL
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -341,8 +366,9 @@ agregar el nombre a `NO_RTL`.
 | `fetch.sv` y contador de programa | Completo y verificado |
 | `top.sv` y su testbench | **Completo y verificado** |
 | Ensamblador propio | **Completo y verificado** |
-| `load_file.py` y `extract_data.py` | Pendiente |
-| Subrutina `__div32` | Pendiente |
+| `load_file.py` y `extract_data.py` | **Completos y verificados** |
+| Subrutina `__div32` | **Completa y verificada** |
+| Programa que cifra un archivo completo | Pendiente |
 | Registro de cambios para CE1108 | Pendiente de enviar |
 | Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |

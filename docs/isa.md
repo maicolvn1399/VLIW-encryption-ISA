@@ -898,7 +898,23 @@ Instrucciones habituales de otras arquitecturas y su construcción en nuestra ar
 | `rx = (a < b)` como valor | `cmp ra, rb` en S0, luego `setcc rx, lt` |
 | `rx = (a == b)` como valor | `cmp ra, rb` en S0, luego `setcc rx, eq` |
 | Leer la causa de la última falla | `mfpsw rx`, luego `srli rx, rx, #7` y `andi rx, rx, #7` |
-| `div ra, rb` | `jal.al __div32`, con dividendo en `R6` y divisor en `R7`; cociente en `R6` y residuo en `R7` |
+| `div ra, rb` | `jal.al __div32`, con dividendo en `R6` y divisor en `R7`; cociente en `R6` y residuo en `R7`. Destruye `R1` a `R5` |
+| `mod ra, rb` | La misma llamada: el residuo ya queda en `R7` |
+
+**Contrato de `__div32`.** La rutina se entrega en `tools/programas/div32.s` y su convención completa es:
+
+| | |
+| :--- | :--- |
+| Entrada | `R6` = dividendo, `R7` = divisor, los dos sin signo |
+| Salida | `R6` = cociente, `R7` = residuo |
+| Destruye | `R1`, `R2`, `R3`, `R4`, `R5` |
+| Preserva | `R8` a `R14`, y `R15` porque retorna con `jr` |
+| División por cero | No falla: cociente `0xFFFFFFFF` y residuo igual al dividendo, la misma convención que `DIVU` de RISC-V |
+| Costo | Unos 680 ciclos. El lazo da 32 vueltas de 21 bundles |
+
+La lista de registros que destruye es parte del contrato: el generador de código debe guardar lo que le importe de `R1` a `R5` antes de llamar. No se guardan dentro de la rutina a propósito, porque cada `push` y cada `pop` costarían un acceso a memoria más tres bundles de separación, y el llamador casi siempre sabe que no le hacen falta.
+
+El lazo no contiene ningún salto: la resta condicional se hace con `cmp`, `setcc` y `mul`, aprovechando que `setcc` deja un 0 o un 1 en un registro. Eso lo vuelve de tiempo constante y hace que se pueda verificar leyéndolo, sin razonar sobre dos caminos que convergen. `tb_div.sv` lo ejecuta en el procesador con seis pares, incluidos el de divisor cero y el del bit 31 encendido, que es el que distingue una división sin signo de una con signo.
 
 **Sobre la división:** CERBERO no incluye instrucción de división. Un divisor de 32 bits es multiciclo por naturaleza: implementarlo combinacional produciría el camino crítico más largo del procesador por un margen amplio, e implementarlo multiciclo obligaría a que esa instrucción tuviera una latencia distinta a todas las demás, rompiendo la única regla que constituye el contrato con el generador de código. El precedente es directo: el conjunto base de RISC-V tampoco incluye multiplicación ni división, que viven en una extensión opcional. la división se provee como subrutina `__div32`, escrita en ensamblador propio y entregada junto con el ISA.
 
@@ -1006,3 +1022,23 @@ Correcciones al propio documento, encontradas al escribir el ensamblador. No cam
 Las dos primeras eran errores de redacción. La tercera es la más fácil de cometer y la que más conviene entender: **`rd` ocupa los bits `26:23` y `rs1` los `22:19`, así que los dos cruzan la frontera entre dígitos hexadecimales.** Agrupar de cuatro en cuatro empezando por el campo, y no por el bit 31, produce un número que parece correcto y codifica otro registro. El agrupamiento válido arranca siempre en el bit 31, y el ensamblador es la única fuente confiable de un valor codificado: `cerbero_asm.py --listado` imprime el hexadecimal de cada bundle junto a su línea fuente.
 
 El ejemplo corregido de 10.5 es exactamente lo que produce la herramienta, y `probar_asm.py` lo tiene como caso de prueba para que no vuelva a divergir.
+
+### v1.4
+
+Contrato de la subrutina de división y formato del buffer de archivo. Las dos cosas son información nueva, no correcciones: la Entrega 1 mencionaba la subrutina sin fijar qué registros destruye, y el formato del buffer no existía.
+
+| Cambio | Alcance | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| `__div32` destruye `R1` a `R5` | Subrutina | **Sí**, hay que guardar esos registros antes de llamar |
+| `__div32` con divisor cero da cociente en unos y residuo igual al dividendo | Subrutina | No, pero conviene saberlo |
+| El buffer de archivo lleva dos palabras de cabecera en `0x4000` | Mapa de memoria | **Sí**, si el código generado accede al buffer |
+
+El formato del buffer, que producen `load_file.py` y `extract_data.py`:
+
+| Dirección | Contenido |
+| :--- | :--- |
+| `0x4000` | Cantidad de bytes del archivo original |
+| `0x4004` | Cantidad de bloques de 64 bits |
+| `0x4008` | Los datos, little-endian, rellenados con ceros hasta un múltiplo de 8 bytes |
+
+La cantidad de bytes hace falta porque Feistel4 trabaja sobre bloques de 64 bits y casi ningún archivo mide un múltiplo exacto de 8: sin ese número, al extraer no habría forma de distinguir los ceros de relleno de los ceros que de verdad estaban en el archivo, y todo archivo que terminara en `0x00` saldría truncado. La cantidad de bloques la lee el programa que cifra para saber cuántas vueltas dar, y se deja calculada para no gastar una división en cada corrida.

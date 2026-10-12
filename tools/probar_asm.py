@@ -390,6 +390,28 @@ asm, _ = ensamblar("movi r1, #5 ;\n- ;\n- ;\nadd r2, r1, r3 ;")
 check("y no se emite ninguna advertencia",
       asm.advertencias == [], asm.advertencias)
 
+# Las banderas son una dependencia igual que un registro, y con la misma regla
+# de 3 bundles. Sin esto, la cadena cmp -> setcc de __div32 no se podria
+# verificar: ningun registro las conecta.
+advierte("setcc a un bundle de su comparacion",
+         "cmp r1, r2 ;\nsetcc r3, geu ;",
+         "las banderas")
+
+advierte("un salto condicional a un bundle de su comparacion",
+         "cmpi r1, #0 ;\n- | - | - | - | br.ne a ;\na: - ;",
+         "las banderas")
+
+advierte("mfpsw tambien lee el PSW",
+         "cmp r1, r2 ;\n- ;\nmfpsw r3 ;",
+         "las banderas")
+
+acepta("a tres bundles de la comparacion ya no hay advertencia",
+       "cmp r1, r2 ;\n- ;\n- ;\nsetcc r3, geu ;")
+
+asm, _ = ensamblar("- | - | - | - | br.al a ;\na: - ;")
+check("un salto incondicional no depende de las banderas",
+      asm.advertencias == [], asm.advertencias)
+
 advierte("un salto en el delay slot de otro salto",
          "- | - | - | - | br.al a ;\n- | - | - | - | br.al b ;\n"
          "a: - ;\nb: - ;",

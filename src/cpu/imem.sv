@@ -72,6 +72,13 @@
 // rellenar el archivo con lineas de ceros hasta NUM_BUNDLES. En los testbenches
 // el aviso se deja a proposito, porque ahi se esta comprobando justo ese caso.
 //
+// El aviso contrario tambien existe: "Too many words in the file for the
+// requested range" si el archivo trae MAS bundles que la memoria. Ese nunca es
+// intencional, siempre significa que el relleno del ensamblador no coincide con
+// el NUM_BUNDLES del testbench, y los bundles de sobra se descartan en silencio.
+// El makefile declara el tamano de cada programa por separado justamente para
+// que los dos numeros cuadren.
+//
 // -----------------------------------------------------------------------------
 // VOLCADO PARA LOS TESTBENCHES
 // -----------------------------------------------------------------------------

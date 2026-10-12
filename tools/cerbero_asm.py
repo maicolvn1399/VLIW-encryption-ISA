@@ -111,6 +111,18 @@ RE_ETIQ = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 N_LLAVES = 4   # la boveda tiene 4 ranuras: el campo kv es de 2 bits
 
+# Las banderas del PSW son una dependencia igual que un registro y con la misma
+# regla de 3 bundles: una comparacion las escribe y SETcc, un salto condicional
+# o MFPSW las leen. Se les da un indice propio, fuera del rango de los 16
+# registros, para que la comprobacion de latencia las trate como a cualquier
+# otro productor sin logica aparte.
+BANDERAS = 16
+
+
+def nombre_recurso(r):
+    return "las banderas" if r == BANDERAS else f"R{r}"
+
+
 
 def reg(txt):
     m = RE_REG.match(txt.strip())
@@ -391,6 +403,12 @@ class Ensamblador:
                         pc += inmediato(arg)
                     except ErrorEnsamblado as e:
                         self._error(f".space: {e.mensaje}", n, cruda)
+                elif dirv == ".include":
+                    # Ya se expandio antes de las pasadas; si llega aqui es que
+                    # se ensamblo sin pasar el archivo base.
+                    self._error(
+                        ".include requiere conocer el archivo de origen; "
+                        "use la linea de comandos y no la API directa", n, cruda)
                 elif dirv == ".secure":
                     if en_segura:
                         self._error(".secure anidado", n, cruda)
@@ -527,6 +545,12 @@ class Ensamblador:
 
         escribe = set()
         lee = set()
+        # Solo las comparaciones escriben banderas, y solo en S0
+        if mn in ("cmp", "test", "cmpi", "testi"):
+            escribe.add(BANDERAS)
+        # SETcc materializa una condicion y MFPSW lee el PSW entero
+        if mn in ("setcc", "mfpsw"):
+            lee.add(BANDERAS)
         if plantilla in ("rd,rs1,rs2", "rd,rs1", "rd,rs1,imm19",
                          "rd,imm19", "rd,imm16", "rd,cond", "rd"):
             escribe.add(rd)
@@ -700,7 +724,10 @@ class Ensamblador:
                     f"campo tiene 10 bits con signo (-512 a 511)")
             v = (self.bru_rel[mn] << 13) | (cond << 10) | a_campo(desp, 10)
             escribe = {15} if mn == "jal" else set()
-            return v & 0xFFFF, escribe, set(), True
+            # Un salto incondicional no mira el PSW; AUTH no lo escribe una
+            # comparacion, asi que tampoco cuenta para esta regla
+            lee = set() if suf in ("al", "auth") else {BANDERAS}
+            return v & 0xFFFF, escribe, lee, True
 
         if mn in self.bru_ind:
             self.usados.add(mn)
@@ -708,7 +735,8 @@ class Ensamblador:
             rs = reg(a)
             v = (self.bru_ind[mn] << 13) | (cond << 10) | (rs << 5)
             escribe = {15} if mn == "jalr" else set()
-            return v & 0xFFFF, escribe, {rs}, True
+            lee = {rs} if suf in ("al", "auth") else {rs, BANDERAS}
+            return v & 0xFFFF, escribe, lee, True
 
         raise ErrorEnsamblado(f"'{bruto}' no es una instruccion del slot S4 (BRU)")
 
@@ -751,8 +779,9 @@ class Ensamblador:
                 for r in esc:
                     if r in escribe_bundle:
                         self._error(
-                            f"dos slots escriben R{r} en el mismo bundle: "
-                            f"{escribe_bundle[r]} y {NOMBRE_SLOT[i]}", n, cruda)
+                            f"dos slots escriben {nombre_recurso(r)} en el "
+                            f"mismo bundle: {escribe_bundle[r]} y "
+                            f"{NOMBRE_SLOT[i]}", n, cruda)
                     else:
                         escribe_bundle[r] = NOMBRE_SLOT[i]
 
@@ -771,11 +800,11 @@ class Ensamblador:
                         previas = escrituras_previas[-atras]
                         choque = sorted(lee_bundle & previas)
                         if choque:
-                            nombres = ", ".join(f"R{r}" for r in choque)
+                            nombres = ", ".join(nombre_recurso(r) for r in choque)
                             self._advertir(
-                                f"se lee {nombres} a solo {atras} bundle(s) de "
-                                f"su productor; el ISA exige 3 y el hardware "
-                                f"va a entregar el valor viejo", n)
+                                f"lectura de {nombres} a solo {atras} "
+                                f"bundle(s) de su productor; el ISA exige 3 y "
+                                f"el hardware va a entregar el valor viejo", n)
             escrituras_previas.append(set(escribe_bundle))
 
             palabra = 0
@@ -785,7 +814,48 @@ class Ensamblador:
 
     # -- entrada principal ---------------------------------------------------
 
-    def ensamblar(self, texto):
+    def expandir_includes(self, texto, base, vistos=None, profundidad=0):
+        """Sustituye cada .include por el contenido del archivo.
+
+        Se hace ANTES de las dos pasadas y no durante, para que las etiquetas y
+        las direcciones salgan de un solo flujo de lineas. El archivo incluido
+        se busca junto al que lo incluye, que es lo que espera cualquiera que
+        escriba .include "div32.s" desde la misma carpeta.
+        """
+        if vistos is None:
+            vistos = set()
+        if profundidad > 16:
+            self._error(".include anidado demasiado profundo")
+            return texto
+
+        salida = []
+        for n, cruda in enumerate(texto.splitlines(), start=1):
+            limpia = cruda.split("//")[0].strip()
+            if not limpia.lower().startswith(".include"):
+                salida.append(cruda)
+                continue
+            resto = limpia[len(".include"):].strip()
+            if len(resto) >= 2 and resto[0] in "\"'" and resto[-1] == resto[0]:
+                resto = resto[1:-1]
+            ruta = (Path(base).parent / resto).resolve()
+            if ruta in vistos:
+                # Incluir dos veces el mismo archivo duplicaria sus etiquetas,
+                # asi que el segundo se ignora en silencio, como una guarda de
+                # cabecera. Es lo que hace falta cuando dos programas incluyen
+                # la misma rutina.
+                continue
+            if not ruta.is_file():
+                self._error(f".include: no se encontro '{resto}'", n, cruda)
+                continue
+            vistos.add(ruta)
+            salida.append(f"// ---- .include {resto} ----")
+            salida.append(self.expandir_includes(
+                ruta.read_text(encoding="utf-8"), ruta, vistos, profundidad + 1))
+        return "\n".join(salida)
+
+    def ensamblar(self, texto, base=None):
+        if base is not None:
+            texto = self.expandir_includes(texto, base)
         lineas = texto.splitlines()
         self.primera_pasada(lineas)
         self.segunda_pasada()
@@ -873,7 +943,7 @@ def main(argv=None):
     asm = Ensamblador(defs)
 
     texto = Path(args.fuente).read_text(encoding="utf-8")
-    ok = asm.ensamblar(texto)
+    ok = asm.ensamblar(texto, base=args.fuente)
 
     for a in asm.advertencias:
         print(f"advertencia: {a}", file=sys.stderr)

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""
+load_file.py - Convierte un archivo en la imagen de memoria de datos.
+
+CE-4301 Arquitectura de Computadores I - Proyecto Grupal I - Grupo #4
+
+Es el punto 7 del plan del grupo: el programa que toma un archivo y lo pasa a
+binario para que el procesador lo cifre. La salida es un archivo de texto con
+una palabra de 32 bits por linea, apto para $readmemh, que es como se carga
+dmem.sv.
+
+    load_file.py entrada.txt -o datos.hex
+    load_file.py foto.png -o datos.hex --base 0x4000 --palabras 16384
+
+El formato del buffer esta en formato_buffer.py, que es el mismo modulo que usa
+extract_data.py para leerlo de vuelta.
+
+-----------------------------------------------------------------------------
+POR QUE LA SALIDA EMPIEZA EN LA PALABRA CERO
+-----------------------------------------------------------------------------
+$readmemh carga desde la posicion 0 del arreglo, no desde una direccion
+arbitraria, asi que el archivo tiene que traer ceros desde el principio hasta
+donde arranca el buffer. Con la base por omision, 0x4000, eso son 4096 palabras
+de ceros antes de los datos.
+
+Se podria usar una marca @4000 y dejar que $readmemh salte, pero entonces el
+resto de la memoria queda sin inicializar y cualquier lectura de una variable
+global devolveria valores indefinidos, que es justo lo que las cabeceras de
+imem.sv y dmem.sv explican que hay que evitar. Rellenar es mas barato que
+depurar una X en una forma de onda.
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from formato_buffer import (BASE_POR_OMISION, BYTES_POR_BLOQUE,   # noqa: E402
+                            empaquetar, escribir_hex)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Convierte un archivo en una imagen de DMEM para CERBERO-1")
+    ap.add_argument("entrada", help="archivo a cargar")
+    ap.add_argument("-o", "--salida", required=True,
+                    help="archivo .hex de salida, para $readmemh")
+    ap.add_argument("--base", default=hex(BASE_POR_OMISION),
+                    help="direccion de byte donde arranca el buffer "
+                         f"(por omision {BASE_POR_OMISION:#x}, la region de "
+                         "buffers del mapa de memoria)")
+    ap.add_argument("--palabras", type=int, default=None,
+                    help="rellena la salida hasta esta cantidad de palabras; "
+                         "con el tamano de la memoria, $readmemh no avisa")
+    args = ap.parse_args(argv)
+
+    base = int(args.base, 0)
+    if base % 4:
+        print(f"error: la base {base:#x} no esta alineada a palabra",
+              file=sys.stderr)
+        return 2
+
+    datos = Path(args.entrada).read_bytes()
+    cuerpo = empaquetar(datos)
+
+    # Ceros desde la palabra 0 hasta la base, y despues el buffer
+    palabras = [0] * (base // 4) + cuerpo
+
+    if args.palabras is not None and len(palabras) > args.palabras:
+        print(f"error: el buffer necesita {len(palabras)} palabras y el limite "
+              f"es {args.palabras}", file=sys.stderr)
+        return 1
+
+    total = escribir_hex(args.salida, palabras, args.palabras)
+
+    relleno = (-len(datos)) % BYTES_POR_BLOQUE
+    print(f"{args.entrada}: {len(datos)} bytes")
+    print(f"  base            {base:#010x}")
+    print(f"  bloques de 64 b {cuerpo[1]}")
+    print(f"  relleno         {relleno} byte(s) en cero")
+    print(f"{args.salida}: {total} palabras")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

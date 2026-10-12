@@ -77,16 +77,20 @@ DEPS_fetch_flow   := $(CPU)/fetch.sv $(CPU)/imem.sv $(CPU)/reg_if_id.sv \
 # tb_asm carga el binario que produce el ensamblador, asi que depende del .hex
 DEPS_asm          := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/feistel.hex $(PROGS)/feistel_datos.hex
+DEPS_div          := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/div32_prueba.hex $(PROGS)/div32_prueba_datos.hex
 
 # ---- Opciones de compilacion por unidad -------------------------------------
 # tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
 # por macro, porque Icarus no puede pasar un parametro string a un submodulo.
 XFLAGS_asm := -DCERBERO_IMEM_FILE='"$(PROGS)/feistel.hex"' \
               -DCERBERO_DMEM_FILE='"$(PROGS)/feistel_datos.hex"'
+XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
+              -DCERBERO_DMEM_FILE='"$(PROGS)/div32_prueba_datos.hex"'
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
-NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm
+NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -108,6 +112,9 @@ herramientas:
 	@echo ""
 	@echo "---- pruebas del ensamblador ----"
 	python3 $(TOOLS)/probar_asm.py
+	@echo ""
+	@echo "---- pruebas de load_file y extract_data ----"
+	python3 $(TOOLS)/probar_archivos.py
 
 sim: $(UNITS)
 	@echo ""
@@ -132,14 +139,28 @@ tb_%.vvp: $$(PKGS) $$(if $$(filter $$*,$$(NO_RTL)),,$(CPU)/%.sv) $$(SUB_$$*) $$(
 	$(IVERILOG) $(FLAGS) $(XFLAGS_$*) -s tb_$* -o $@ $(filter %.sv,$^)
 
 # ---- Ensamblado de programas -------------------------------------------------
-# Un .s produce los dos .hex de una pasada. Se rellenan hasta el tamano de las
-# memorias para que $readmemh no avise.
+# Un .s produce los dos .hex de una pasada.
+#
+# El relleno tiene que coincidir EXACTAMENTE con el tamano de las memorias del
+# testbench que va a cargar el binario. Icarus avisa en los dos sentidos:
+# "Not enough words" si el archivo es mas corto que la memoria y "Too many
+# words" si es mas largo. Ninguno de los dos rompe la simulacion, pero el ruido
+# tapa los avisos que si importan, asi que cada programa declara su tamano.
+BUNDLES_feistel      := 2048
+PALABRAS_feistel     := 64
+BUNDLES_div32_prueba := 128
+PALABRAS_div32_prueba := 64
+
 $(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
 	$(ASM) $< -o $(PROGS)/$*.hex --datos $(PROGS)/$*_datos.hex \
-	       --bundles 2048 --palabras 64
+	       --bundles $(or $(BUNDLES_$*),2048) \
+	       --palabras $(or $(PALABRAS_$*),64)
 
 .PHONY: programas cobertura
-programas: $(PROGS)/feistel.hex
+programas: $(PROGS)/feistel.hex $(PROGS)/div32_prueba.hex
+
+# div32_prueba.s incluye div32.s, asi que su binario depende de los dos
+$(PROGS)/div32_prueba.hex: $(PROGS)/div32.s
 
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:

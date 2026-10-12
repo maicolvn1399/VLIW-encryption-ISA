@@ -95,6 +95,13 @@
 // NUM_WORDS para que no aparezca; en los testbenches se deja a proposito,
 // porque ahi se esta comprobando justo ese caso.
 //
+// El aviso contrario tambien existe: "Too many words in the file for the
+// requested range" si el archivo trae MAS palabras que la memoria. Ese nunca es
+// intencional, siempre significa que el relleno del ensamblador no coincide con
+// el NUM_WORDS del testbench, y las palabras de sobra se descartan en silencio.
+// El makefile declara el tamano de cada programa por separado justamente para
+// que los dos numeros cuadren.
+//
 // -----------------------------------------------------------------------------
 // VOLCADO PARA LOS TESTBENCHES
 // -----------------------------------------------------------------------------
