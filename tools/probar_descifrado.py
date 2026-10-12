@@ -18,7 +18,11 @@ coincidir byte por byte con lo que saco el hardware. Si ademas se da el archivo
 original, tambien se compara contra el.
 
     probar_descifrado.py cifrado.bin volcado.hex salida.bin [original]
-                         [--llave K]
+                         [--llave K] [--crudo]
+
+Con --crudo el cifrado es un criptograma sin cabecera, cifrado fuera del
+proyecto. El descifrado sale entonces con el relleno del ultimo bloque, porque
+el tamano original no viaja en ningun lado.
 
 """
 
@@ -30,7 +34,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_data                                   # noqa: E402
-from formato_buffer import de_contenedor, desempaquetar  # noqa: E402
+from formato_buffer import (BYTES_POR_BLOQUE, de_bloques,   # noqa: E402
+                            de_contenedor, desempaquetar)
 from llave import LLAVE_POR_OMISION, formato, leer_llave  # noqa: E402
 from probar_flujo import descifrar_bloque             # noqa: E402
 
@@ -52,7 +57,7 @@ def check(nombre, condicion, detalle=""):
 
 
 def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None,
-         llave=LLAVE_POR_OMISION):
+         llave=LLAVE_POR_OMISION, crudo=False):
     print("=== probar_descifrado: el descifrado del hardware contra el modelo ===")
     print("")
     print(f"  llave  {formato(llave)}")
@@ -71,8 +76,9 @@ def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None,
         return 1
     hardware = Path(ruta_salida).read_bytes()
 
-    # --- lo que descifra el modelo con el mismo contenedor ------------------
-    pal = de_contenedor(Path(ruta_cifrado).read_bytes())
+    # --- lo que descifra el modelo con el mismo criptograma -----------------
+    leer = de_bloques if crudo else de_contenedor
+    pal = leer(Path(ruta_cifrado).read_bytes())
     claro = []
     for b in range(pal[1]):
         i = 2 + 2 * b
@@ -92,9 +98,19 @@ def main(ruta_cifrado, ruta_volcado, ruta_salida, ruta_original=None,
 
     if ruta_original is not None:
         original = Path(ruta_original).read_bytes()
-        check("y es identico al archivo original",
-              hardware == original,
-              f"original   {original[:64]!r}\ndescifrado {hardware[:64]!r}")
+        if crudo:
+            # Sin cabecera el descifrado trae el relleno del ultimo bloque,
+            # que en el original eran ceros
+            relleno = (-len(original)) % BYTES_POR_BLOQUE
+            check("y es el archivo original mas su relleno de ceros",
+                  hardware == original + bytes(relleno),
+                  f"original   {original[:64]!r}\n"
+                  f"descifrado {hardware[:64]!r}")
+        else:
+            check("y es identico al archivo original",
+                  hardware == original,
+                  f"original   {original[:64]!r}\n"
+                  f"descifrado {hardware[:64]!r}")
 
     print("")
     print(f"  descifrado  {hardware[:64]!r}")
@@ -120,6 +136,8 @@ if __name__ == "__main__":
     ap.add_argument("original", nargs="?", default=None)
     ap.add_argument("--llave", default=None,
                     help="la llave con que descifro el hardware")
+    ap.add_argument("--crudo", action="store_true",
+                    help="el cifrado es un criptograma sin cabecera")
     args = ap.parse_args()
     try:
         clave = leer_llave(args.llave) if args.llave else LLAVE_POR_OMISION
@@ -127,4 +145,4 @@ if __name__ == "__main__":
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
     sys.exit(main(args.cifrado, args.volcado, args.salida, args.original,
-                  clave))
+                  clave, args.crudo))

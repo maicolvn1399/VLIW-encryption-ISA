@@ -133,6 +133,23 @@ def a_contenedor(palabras):
                     for p in palabras[:esperadas])
 
 
+def de_bloques(datos):
+    """Arma el buffer de un criptograma crudo, sin cabecera.
+
+    Es el caso de un archivo cifrado fuera del proyecto: trae solo los
+    bloques, asi que el tamano original no se conoce. La cabecera dice que el
+    archivo mide exactamente esos bloques, y el descifrado sale con el relleno
+    del ultimo bloque incluido.
+    """
+    if len(datos) % BYTES_POR_BLOQUE:
+        raise ValueError(
+            f"el criptograma mide {len(datos)} bytes, que no es un multiplo "
+            f"de {BYTES_POR_BLOQUE}: un cifrado por bloques siempre lo es")
+    return [len(datos), len(datos) // BYTES_POR_BLOQUE] + [
+        int.from_bytes(datos[i:i + 4], "little")
+        for i in range(0, len(datos), 4)]
+
+
 def de_contenedor(datos):
     """Inversa de a_contenedor: devuelve las palabras del buffer tal cual.
 

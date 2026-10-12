@@ -285,18 +285,35 @@ solo-cifrar: tb_cifrado.vvp archivo_libre.hex $(PROGRAMAS_LLAVE)
 CIFRADO  ?= cifrado_libre.bin
 ORIGINAL ?=
 
+# Un criptograma cifrado FUERA del proyecto no trae cabecera. Con
+#   make solo-descifrar CIFRADO_CRUDO=externo.bin LLAVE=...
+# se carga como bloques puros. El tamano original no viaja en ningun lado, asi
+# que el descifrado sale con el relleno del ultimo bloque incluido.
+CIFRADO_CRUDO ?=
+ifneq ($(strip $(CIFRADO_CRUDO)),)
+ENTRADA_DESCIFRAR := $(CIFRADO_CRUDO)
+MODO_CARGA        := --crudo
+ARG_CRUDO         := --crudo
+else
+ENTRADA_DESCIFRAR := $(CIFRADO)
+MODO_CARGA        := --cifrado
+ARG_CRUDO         :=
+endif
+
 .PHONY: solo-descifrar contenedor_libre.hex
 contenedor_libre.hex:
-	python3 $(TOOLS)/load_file.py $(CIFRADO) -o $@ --palabras 16384 --cifrado
+	python3 $(TOOLS)/load_file.py $(ENTRADA_DESCIFRAR) -o $@ --palabras 16384 \
+	        $(MODO_CARGA)
 
 solo-descifrar: tb_descifrado.vvp contenedor_libre.hex $(PROGRAMAS_LLAVE)
 	@echo ""
-	@echo "---- solo descifrar $(CIFRADO) ----"
+	@echo "---- solo descifrar $(ENTRADA_DESCIFRAR) ----"
 	$(VVP) -n tb_descifrado.vvp $(PLUS_LLAVE)
 	@echo ""
 	@echo "---- el descifrado contra el modelo de referencia ----"
-	python3 $(TOOLS)/probar_descifrado.py $(CIFRADO) descifrado_libre.hex \
-	        descifrado_libre.bin $(ORIGINAL) $(ARG_LLAVE)
+	python3 $(TOOLS)/probar_descifrado.py $(ENTRADA_DESCIFRAR) \
+	        descifrado_libre.hex descifrado_libre.bin $(ORIGINAL) \
+	        $(ARG_LLAVE) $(ARG_CRUDO)
 
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:

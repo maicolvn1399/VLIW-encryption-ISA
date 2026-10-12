@@ -358,6 +358,41 @@ check("--memory sin --size recupera el archivo por su cabecera",
       r == 0 and resultado.read_bytes() == b"hola, enunciado",
       resultado.read_bytes())
 
+print("")
+print("[8] un criptograma crudo, cifrado fuera del proyecto")
+
+# Sin cabecera no se sabe el tamano original: los bloques se cargan tal cual
+# y la cabecera dice que el archivo mide exactamente esos bloques
+crudo = tmp / "crudo.bin"
+crudo.write_bytes(bytes(range(16)))
+imagen = tmp / "crudo.hex"
+with callado():
+    r = load_file.main([str(crudo), "-o", str(imagen), "--crudo"])
+check("load_file --crudo acepta 16 bytes", r == 0, r)
+check("y arma la cabecera de 16 bytes en 2 bloques, con los datos tal cual",
+      leer_hex(imagen)[0x1000:] == [16, 2, 0x03020100, 0x07060504,
+                                    0x0B0A0908, 0x0F0E0D0C],
+      [f"{p:08X}" for p in leer_hex(imagen)[0x1000:]])
+
+crudo.write_bytes(b"")
+with callado():
+    r = load_file.main([str(crudo), "-o", str(imagen), "--crudo"])
+check("un criptograma crudo vacio da cero bloques",
+      r == 0 and leer_hex(imagen)[0x1000:0x1002] == [0, 0], r)
+
+crudo.write_bytes(bytes(15))
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    r = load_file.main([str(crudo), "-o", str(imagen), "--crudo"])
+check("rechaza un criptograma crudo que no mide un multiplo de 8", r == 1, r)
+
+with callado(), contextlib.redirect_stderr(io.StringIO()):
+    try:
+        r = load_file.main([str(crudo), "-o", str(imagen), "--crudo",
+                            "--cifrado"])
+    except SystemExit as e:
+        r = e.code
+check("--crudo y --cifrado no se pueden pedir juntos", r == 2, r)
+
 print("---")
 print(f"casos: {casos}   fallidos: {fallidos}")
 if fallidos:

@@ -12,6 +12,7 @@ dmem.sv.
     load_file.py entrada.txt -o datos.hex
     load_file.py foto.png -o datos.hex --base 0x4000 --palabras 16384
     load_file.py cifrado.bin -o datos.hex --cifrado
+    load_file.py criptograma_externo.bin -o datos.hex --crudo
     load_file.py --input archivo.txt --output memory.mem --address 0x4000
 
 La ultima forma es la del enunciado (5.4.3). Las opciones en ingles son
@@ -42,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from formato_buffer import (BASE_POR_OMISION, BYTES_POR_BLOQUE,   # noqa: E402
-                            de_contenedor, empaquetar,
+                            de_bloques, de_contenedor, empaquetar,
                             escribir_hex)
 
 
@@ -65,9 +66,14 @@ def main(argv=None):
     ap.add_argument("--palabras", type=int, default=None,
                     help="rellena la salida hasta esta cantidad de palabras; "
                          "con el tamano de la memoria, $readmemh no avisa")
-    ap.add_argument("--cifrado", action="store_true",
-                    help="la entrada es un contenedor de extract_data.py "
-                         "--cifrado: se carga tal cual, sin cabecera nueva")
+    modo = ap.add_mutually_exclusive_group()
+    modo.add_argument("--cifrado", action="store_true",
+                      help="la entrada es un contenedor de extract_data.py "
+                           "--cifrado: se carga tal cual, sin cabecera nueva")
+    modo.add_argument("--crudo", action="store_true",
+                      help="la entrada es un criptograma sin cabecera, "
+                           "cifrado fuera del proyecto: se carga como bloques "
+                           "puros")
     args = ap.parse_args(argv)
 
     if (args.entrada is None) == (args.input_ is None):
@@ -86,9 +92,9 @@ def main(argv=None):
         print(f"error: no se encontro el archivo {entrada}", file=sys.stderr)
         return 1
     datos = Path(entrada).read_bytes()
-    if args.cifrado:
+    if args.cifrado or args.crudo:
         try:
-            cuerpo = de_contenedor(datos)
+            cuerpo = (de_contenedor if args.cifrado else de_bloques)(datos)
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
@@ -110,6 +116,9 @@ def main(argv=None):
     print(f"  bloques de 64 b {cuerpo[1]}")
     if args.cifrado:
         print(f"  contenedor cifrado de un original de {cuerpo[0]} bytes")
+    elif args.crudo:
+        print("  criptograma crudo: el tamano original no se conoce y el "
+              "descifrado incluira el relleno")
     else:
         relleno = (-len(datos)) % BYTES_POR_BLOQUE
         print(f"  relleno         {relleno} byte(s) en cero")
