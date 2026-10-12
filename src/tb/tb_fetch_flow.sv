@@ -228,6 +228,12 @@ module tb_fetch_flow;
   logic   halted_visto;
   logic [`XLEN-1:0] pc_congelado;
 
+  // Segundo programa: un salto DENTRO del delay slot de otro salto
+  localparam int N_ESP2 = 6;
+  logic [`XLEN-1:0] esperado2 [0:N_ESP2-1];
+  logic [`XLEN-1:0] traza2 [0:MAX_TRAZA-1];
+  integer n_traza2;
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("tb_fetch_flow.vcd");
@@ -314,6 +320,62 @@ module tb_fetch_flow;
             pc_congelado, 32'h0000_00D0);
     check1 ("y no se movio mientras estuvo detenido",
             ciclos_detenido > 0, 1'b1);
+
+    // ------------------------------------------------------------------------
+    $display("[3] un salto dentro del delay slot de otro salto");
+    // ------------------------------------------------------------------------
+    // El ISA dice que despues de todo salto se ejecuta exactamente un bundle,
+    // pero no dice que puede haber EN ese bundle. Si trae otro salto, esto es
+    // lo que el hardware hace, y conviene tenerlo medido y no deducido:
+    //
+    //    1  0x010  br.al +5   destino 0x010 + 16*6 = 0x070
+    //    2  0x020  br.al +0   delay slot del primero, y a su vez salto:
+    //                         destino 0x020 + 16*1 = 0x030
+    //
+    // Los dos saltos surten efecto, encadenados. El bundle 0x070, que era el
+    // destino del primero, acaba siendo el DELAY SLOT del segundo: se ejecuta
+    // una sola vez y despues el control cae en 0x030.
+    //
+    // Es comportamiento definido y reproducible, pero casi seguro no es lo que
+    // pretende quien escribe el codigo: el destino del primer salto corre un
+    // bundle y se abandona. Por eso la v1.2 del ISA prohibe la combinacion en
+    // vez de documentarla como una tecnica. Este caso existe para que, si
+    // alguien la usa de todas formas, al menos el hardware no cambie de opinion
+    // en silencio.
+
+    rst_n = 1'b0;
+    @(negedge clk);
+
+    cargar( 0, NOP);
+    cargar( 1, s4_c(`BRU_BR, `COND_AL,  5));
+    cargar( 2, s4_c(`BRU_BR, `COND_AL,  0));
+    for (i = 3; i < 16; i = i + 1) cargar(i, NOP);
+
+    esperado2[0] = 32'h000;
+    esperado2[1] = 32'h010;
+    esperado2[2] = 32'h020;   // delay slot del primer salto, y salto el mismo
+    esperado2[3] = 32'h070;   // destino del primero, usado como delay slot
+    esperado2[4] = 32'h030;   // destino del segundo
+    esperado2[5] = 32'h040;   // y sigue el flujo contiguo
+
+    @(negedge clk);
+    rst_n = 1'b1;
+
+    n_traza2 = 0;
+    for (ciclo = 0; ciclo < N_ESP2; ciclo = ciclo + 1) begin
+      @(negedge clk);
+      if (id_valid) begin
+        traza2[n_traza2] = id_pc;
+        n_traza2 = n_traza2 + 1;
+      end
+    end
+
+    check_int("los dos saltos encadenados dan 6 bundles validos",
+              n_traza2, N_ESP2);
+    for (i = 0; i < N_ESP2; i = i + 1) begin
+      if (i < n_traza2)
+        check32($sformatf("encadenado %0d", i), traza2[i], esperado2[i]);
+    end
 
 `ifdef FORCE_FAIL
     // ------------------------------------------------------------------------

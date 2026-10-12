@@ -111,15 +111,15 @@ module lsu #(
   // Desglose estructurado del opcode
   // ---------------------------------------------------------------------------
 
+  // El bit de extension con ceros no aparece aqui: solo lo usa la extraccion
+  // del carril, que vive en load_align.sv.
   logic       is_inc;
   logic       is_st;
   logic [1:0] tam;
-  logic       is_unsigned;
 
   assign is_inc      = opcode[`LSU_BIT_INC];
   assign is_st       = opcode[`LSU_BIT_ST];
   assign tam         = opcode[`LSU_FLD_TAM];
-  assign is_unsigned = opcode[`LSU_BIT_U];
 
   // ---------------------------------------------------------------------------
   // Opcodes definidos
@@ -309,60 +309,23 @@ module lsu #(
   // ---------------------------------------------------------------------------
   // Lectura desde memoria
   //
-  // El dato llega como palabra completa y la unidad SELECCIONA el carril con
-  // un multiplexor, en vez de correr la palabra entera hacia la derecha. Por
-  // el mismo motivo que en la escritura: el multiplexor es de cuatro a uno
-  // sobre ocho bits, y el desplazador seria de 32 bits con la mitad de la
-  // salida descartada.
+  // La extraccion del carril vive en load_align.sv, que es un modulo aparte
+  // porque el datapath lo necesita por su cuenta: la LSU calcula la direccion
+  // en EX, pero el dato de la memoria no existe hasta MEM, y un modulo
+  // combinacional no puede estar en dos ciclos a la vez. La etapa de memoria
+  // instancia ese mismo modulo con lo que le llega por la frontera EX/MEM.
+  //
+  // Instanciarlo aqui tambien, en vez de dejar la logica suelta en el
+  // datapath, es lo que mantiene una sola copia de la tabla de tamanos y
+  // signos, y lo que hace que los casos de carga de tb_lsu.sv sigan cubriendola.
   // ---------------------------------------------------------------------------
 
-  logic [7:0]  raw_byte;
-  logic [15:0] raw_half;
-  logic [31:0] byte_ext;
-  logic [31:0] half_ext;
-
-  // Los carriles se recortan con asignaciones continuas y no dentro del
-  // always_comb: Icarus Verilog no infiere sensibilidad sobre recortes
-  // constantes dentro de un proceso y emite un aviso por cada uno.
-  logic [7:0]  byte_lane0, byte_lane1, byte_lane2, byte_lane3;
-  logic [15:0] half_lane0, half_lane1;
-
-  assign byte_lane0 = mem_read_data[7:0];
-  assign byte_lane1 = mem_read_data[15:8];
-  assign byte_lane2 = mem_read_data[23:16];
-  assign byte_lane3 = mem_read_data[31:24];
-  assign half_lane0 = mem_read_data[15:0];
-  assign half_lane1 = mem_read_data[31:16];
-
-  always_comb begin
-    case (addr_lo)
-      2'b00  : raw_byte = byte_lane0;
-      2'b01  : raw_byte = byte_lane1;
-      2'b10  : raw_byte = byte_lane2;
-      default: raw_byte = byte_lane3;
-    endcase
-  end
-
-  // La media palabra solo tiene dos carriles posibles, y el bit 0 de la
-  // direccion ya quedo descartado por la comprobacion de alineacion.
-  assign raw_half = addr_lo[1] ? half_lane1 : half_lane0;
-
-  assign byte_ext = is_unsigned ? {24'd0, raw_byte}
-                                : {{24{raw_byte[7]}},  raw_byte};
-  assign half_ext = is_unsigned ? {16'd0, raw_half}
-                                : {{16{raw_half[15]}}, raw_half};
-
-  always_comb begin
-    rd_load_data = 32'd0;
-
-    if (rd_write_en) begin
-      case (tam)
-        `LSU_TAM_B : rd_load_data = byte_ext;
-        `LSU_TAM_H : rd_load_data = half_ext;
-        `LSU_TAM_W : rd_load_data = mem_read_data;
-        default    : rd_load_data = 32'd0;
-      endcase
-    end
-  end
+  load_align u_align (
+      .slot          (slot),
+      .addr_lo       (addr_lo),
+      .rd_write_en   (rd_write_en),
+      .mem_read_data (mem_read_data),
+      .rd_load_data  (rd_load_data)
+  );
 
 endmodule

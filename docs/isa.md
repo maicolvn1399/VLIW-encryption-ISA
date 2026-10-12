@@ -724,6 +724,7 @@ La latencia es idéntica para todas las unidades. No hay tabla de casos especial
 | Banderas | Solo S0 puede escribirlas. Una comparación en S1 registra `ILLOO` |
 | Ejecución | Los cinco slots se ejecutan en paralelo dentro del mismo ciclo |
 | Stalls | Ninguno por dependencias de datos. Se emite un bundle por ciclo |
+| Delay slot | El bundle que sigue a un salto **no puede traer otro salto** en `S4`. El resto de sus slots se usa con libertad |
 
 ### 9.4 Ejemplos
 
@@ -976,9 +977,13 @@ Precisiones sobre el PSW que surgieron al implementar la unidad de fallos. No ca
 | `EXC` y `CAUSE` guardan la **primera** falla y quedan congelados; sólo el reset los limpia | PSW | No, pero cambia cómo se lee el resultado |
 | `WCONF` se detecta sobre los habilitadores de escritura reales, no sobre los opcodes | PSW | No |
 | Dos escrituras del **mismo** slot no son `WCONF` | PSW | No |
+| El delay slot de un salto no puede traer otro salto | Slot BRU | **Sí**, es una restricción nueva para el calendarizador |
+| `HALT` también tiene delay slot: el bundle siguiente se ejecuta | Slot BRU | Sí, hay que emitir un bundle después de `HALT` |
 
 Las tres se siguen de lo que la sección 1.2 ya decía y conviene dejarlas escritas:
 
 - **La primera falla manda.** La sección 1.2 dice que «`EXC` se marca solo una vez» y que el PSW no es escribible directamente. En consecuencia los dos campos son pegajosos y la causa que queda es la de la primera falla, no la de la última. Guardar la primera es lo útil para depurar, porque una falla suele arrastrar otras y la última casi siempre es una consecuencia. Para distinguir varias fallas, el patrón es consultar `MFPSW` después de cada tramo corto de código.
 - **`WCONF` no se puede detectar en la etapa de decodificación.** Depende de si cada slot escribe de verdad, y eso se resuelve en ejecución: `S4` escribe el enlace sólo si el salto se toma, `S2` no escribe si la dirección sale desalineada o fuera de rango, y `S3` no escribe el par si la bóveda no da permiso. Un detector que trabaje sólo sobre los opcodes tiene que suponer que todo slot con opcode de escritura va a escribir, y reportaría `WCONF` en bundles que nunca llegan a chocar.
 - **`WCONF` es una condición entre slots.** El slot `S2` escribe dos veces en `LW.INC`, el destino y el registro base, y la sección 4 ya define quién gana cuando coinciden: el dato cargado. Eso es comportamiento definido y no es falla. Lo mismo para las dos mitades del par en `S3`, que además nunca pueden ser el mismo registro.
+- **Nada de saltos en el delay slot.** La Entrega 1 decía que después de todo salto se ejecuta exactamente un bundle, pero no decía qué puede haber *en* ese bundle. Si trae otro salto, los dos surten efecto encadenados: el destino del primero acaba siendo el delay slot del segundo, se ejecuta una sola vez y el control cae en el destino del segundo. Es comportamiento definido y reproducible, y está medido en `tb_fetch_flow.sv`, pero casi nunca es lo que pretende quien genera el código. Se prohíbe en vez de documentarse como técnica. El resto de los slots del delay slot se usa con toda libertad; la restricción es sólo sobre `S4`.
+- **`HALT` tiene delay slot como cualquier salto.** La especificación no decía si `HALT` cuenta como salto. Cuenta: cuando está en decodificación, el bundle siguiente ya se está buscando, y anularlo exigiría una señal de vaciado que ninguna frontera del pipeline tiene. Se ejecuta, y desde ese flanco el contador queda congelado. En la práctica el generador de código debe emitir un bundle después de `HALT`, igual que después de cualquier salto.

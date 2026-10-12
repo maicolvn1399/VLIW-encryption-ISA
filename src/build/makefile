@@ -29,7 +29,20 @@ VVP       ?= vvp
 GTKWAVE   ?= gtkwave
 VERILATOR ?= verilator
 
-FLAGS      := -g2012 -Wall -Wno-timescale -I ../cpu
+# Programa y datos para "make top". Opcionales: sin ellos las memorias arrancan
+# vacias y el testbench las carga por referencia jerarquica.
+#   make top IMEM=../tb/programa.hex DMEM=../tb/datos.hex
+IMEM ?=
+DMEM ?=
+INIT_DEFS :=
+ifneq ($(IMEM),)
+INIT_DEFS += -DCERBERO_IMEM_FILE='"$(IMEM)"'
+endif
+ifneq ($(DMEM),)
+INIT_DEFS += -DCERBERO_DMEM_FILE='"$(DMEM)"'
+endif
+
+FLAGS      := -g2012 -Wall -Wno-timescale -I ../cpu $(INIT_DEFS)
 LINT_FLAGS := --lint-only -Wall -I../cpu
 
 CPU := ../cpu
@@ -42,6 +55,13 @@ UNITS := $(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv))
 # integracion, que no tienen un ../cpu/<nombre>.sv detras.
 RTL_UNITS := $(patsubst $(CPU)/%.sv,%,$(wildcard $(CPU)/*.sv))
 
+# ---- Submodulos RTL por unidad ----------------------------------------------
+# Modulos de ../cpu que otra unidad instancia. Se compilan junto a ella Y se
+# analizan junto a ella, que es la diferencia con DEPS_: esas son dependencias
+# del testbench, no del modulo.
+SUB_lsu := $(CPU)/load_align.sv
+SUB_top := $(filter-out $(CPU)/top.sv,$(wildcard $(CPU)/*.sv))
+
 # ---- Dependencias extra por unidad (agregar aqui) ---------------------------
 DEPS_crypto_unit  := $(TB)/key_vault_model.sv
 DEPS_crypto_vault := $(CPU)/crypto_unit.sv $(CPU)/key_vault.sv
@@ -49,8 +69,8 @@ DEPS_latency      := $(CPU)/regfile.sv
 DEPS_wconf        := $(CPU)/psw_fault_unit.sv $(CPU)/regfile.sv
 DEPS_pipeline     := $(CPU)/reg_if_id.sv $(CPU)/reg_id_ex.sv \
                      $(CPU)/reg_ex_mem.sv $(CPU)/regfile.sv
-DEPS_fetch_flow   := $(CPU)/fetch.sv $(CPU)/imem.sv $(CPU)/reg_if_id.sv \n                     $(CPU)/bru.sv
-# DEPS_top        := $(filter-out $(PKGS),$(wildcard $(CPU)/*.sv))
+DEPS_fetch_flow   := $(CPU)/fetch.sv $(CPU)/imem.sv $(CPU)/reg_if_id.sv \
+                     $(CPU)/bru.sv
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
@@ -86,7 +106,7 @@ $(UNITS): %: tb_%.vvp
 # Compilacion: paquetes + modulo + dependencias + testbench
 .SECONDARY:
 .SECONDEXPANSION:
-tb_%.vvp: $$(PKGS) $$(if $$(filter $$*,$$(NO_RTL)),,$(CPU)/%.sv) $$(DEPS_$$*) $(TB)/tb_%.sv
+tb_%.vvp: $$(PKGS) $$(if $$(filter $$*,$$(NO_RTL)),,$(CPU)/%.sv) $$(SUB_$$*) $$(DEPS_$$*) $(TB)/tb_%.sv
 	$(IVERILOG) $(FLAGS) -s tb_$* -o $@ $^
 
 $(WAVE_TARGETS): wave-%: %
@@ -104,7 +124,7 @@ lint: $(LINT_TARGETS)
 
 $(LINT_TARGETS): lint-%:
 	@echo "---- verilator $* ----"
-	$(VERILATOR) $(LINT_FLAGS) $(CPU)/$*.sv --top-module $*
+	$(VERILATOR) $(LINT_FLAGS) $(SUB_$*) $(CPU)/$*.sv --top-module $*
 
 clean:
 	rm -f *.vvp *.vcd

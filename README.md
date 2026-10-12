@@ -44,6 +44,8 @@ reenvía resultados y no se detiene nunca.
 | — | Frontera IF/ID: el PC que acompaña al bundle | `reg_if_id.sv` |
 | — | Frontera ID/EX: slots y los 9 valores leídos | `reg_id_ex.sv` |
 | — | Frontera EX/MEM: los 7 puertos de escritura y las 5 fallas | `reg_ex_mem.sv` |
+| — | Extracción del carril de una carga, en MEM | `load_align.sv` |
+| — | **El procesador completo** | `top.sv` |
 
 Las tres unidades de S3 se excluyen entre sí: el opcode del slot decide cuál
 actúa. O el programa cifra, o usa la ALU corta.
@@ -76,8 +78,9 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # compila y ejecuta los dieciocho testbenches
-make lint       # análisis estático de las catorce unidades
+make            # compila y ejecuta los veintiún testbenches
+make lint       # análisis estático de las diecisiete unidades
+make top        # corre los siete programas sobre el procesador completo
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
 make list       # lista las unidades disponibles
@@ -129,14 +132,15 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `reg_id_ex` | 18 | Aislamiento de los 12 campos con huella de bits, los 9 puertos de lectura uno por uno |
 | `reg_ex_mem` | 10 | Aislamiento de los 10 campos, los 7 puertos de escritura y las 5 causas elemento por elemento |
 | `wconf` | 12 | **Integración**: 4000 vectores aleatorios comparando los dos detectores de conflicto de escritura, el del banco y el del PSW |
-| `pipeline` | 6 | **Integración**: mide la latencia expuesta sobre la cadena real de registros más el banco, y que el PC acompañe al bundle en ID y en EX |
 | `fetch` | 41 | Avance de 16 en 16, salto tomado, destino desalineado forzado a múltiplo de 16, `HALT` congela el PC y apaga `valid`, el reset lo libera |
-| `fetch_flow` | 16 | **Integración**: `fetch`, `imem`, `reg_if_id` y `bru` juntos sobre un programa de saltos; exactamente un delay slot por salto y el de `HALT` sí se ejecuta |
-| **Total** | **1594** | |
+| `pipeline` | 6 | **Integración**: mide la latencia expuesta sobre la cadena real de registros más el banco, y que el PC acompañe al bundle en ID y en EX |
+| `fetch_flow` | 23 | **Integración**: `fetch`, `imem`, `reg_if_id` y `bru` sobre un programa de saltos; un delay slot exacto por salto, el de `HALT` se ejecuta, y el caso medido de un salto dentro de un delay slot |
+| `top` | 45 | **El procesador completo** corriendo siete programas: aritmética con la latencia de 3 bundles, memoria en los tres tamaños con y sin signo, llamada y retorno, **cifrado Feistel4 completo** contra valores calculados fuera del simulador, la misma rutina denegada fuera de la región segura, `ILLOP` y `MISALIGN`, y que nada se ejecute después de `HALT` |
+| **Total** | **1646** | |
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los dieciocho aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los veintiún aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -173,7 +177,9 @@ cerbero/
     │   ├── fetch.sv             Etapa IF, contador de programa
     │   ├── reg_if_id.sv         Frontera IF/ID
     │   ├── reg_id_ex.sv         Frontera ID/EX
-    │   └── reg_ex_mem.sv        Frontera EX/MEM
+    │   ├── reg_ex_mem.sv        Frontera EX/MEM
+    │   ├── load_align.sv        Extracción del carril, usada en MEM
+    │   └── top.sv               El procesador completo
     └── tb/
         ├── key_vault_model.sv   Modelo de bóveda para probar crypto_unit sola
         ├── tb_<unidad>.sv       Un testbench por unidad
@@ -182,6 +188,7 @@ cerbero/
         ├── tb_wconf.sv          Cosimulación de los dos detectores de WCONF
         ├── tb_pipeline.sv       Latencia expuesta sobre la cadena de registros
         ├── tb_fetch_flow.sv     Búsqueda, delay slot y HALT con la BRU real
+        ├── tb_top.sv            Siete programas sobre el procesador completo
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -190,7 +197,7 @@ cerbero/
 
 Única fuente de verdad para los números del ISA: anchos, posiciones de campo,
 opcodes de los cinco slots, códigos de condición, bits del PSW y causas de
-falla. Lo incluyen los catorce módulos y los testbenches, de modo que renumerar un
+falla. Lo incluyen los diecisiete módulos y los testbenches, de modo que renumerar un
 opcode se hace en una línea y el RTL y las pruebas quedan sincronizados. Si
 estuviera escrito a mano en cada archivo, un testbench podría quedar probando
 una codificación que el módulo ya no implementa, y ambos "pasarían".
@@ -260,15 +267,35 @@ agregar el nombre a `NO_RTL`.
   bundle que haya que descartar. Eso es lo que se compra resolviendo en ID en
   vez de en EX: resolver en EX exigiría dos delay slots, o uno más lógica de
   vaciado en las tres fronteras.
-- **`HALT` también tiene delay slot.** El ISA no dice si `HALT` cuenta como
-  salto; se trata igual. El bundle siguiente ya se está buscando cuando la BRU
-  ve `HALT`, así que se ejecuta, y desde ese flanco el PC queda congelado y
-  `valid` en cero. Los bundles en vuelo terminan normalmente; esperar a que el
-  pipeline se vacíe antes de terminar la simulación le toca a quien observa
-  `halted`. Solo el reset sale de ese estado.
+- **`HALT` también tiene delay slot.** El ISA no decía si `HALT` cuenta como
+  salto; cuenta. El bundle siguiente ya se está buscando cuando la BRU ve
+  `HALT`, así que se ejecuta, y desde ese flanco el PC queda congelado y `valid`
+  en cero. Los bundles en vuelo terminan normalmente; esperar a que el pipeline
+  se vacíe antes de terminar la simulación le toca a quien observa `halted`.
+  Sólo el reset sale de ese estado.
 - **El PC siempre es múltiplo de 16.** `JR` y `JALR` saltan a `R[rs]` tal cual,
-  así que `fetch.sv` borra los cuatro bits bajos del destino. Sin eso `imem`
-  buscaría el bundle correcto, pero la BRU y la bóveda verían un PC distinto.
+  así que `fetch.sv` borra los cuatro bits bajos del destino. `imem` los ignora
+  de todas formas, pero sin el borrado la BRU vería un PC distinto del bundle
+  que de verdad se buscó, y el enlace de `JAL` y la comparación de región segura
+  de la bóveda saldrían corridos.
+- **Nada de saltos en el delay slot.** Si el delay slot trae otro salto, los dos
+  surten efecto encadenados y el destino del primero acaba siendo el delay slot
+  del segundo: se ejecuta una vez y se abandona. Es definido y reproducible, y
+  `make fetch_flow` lo mide, pero no es lo que pretende quien genera el código,
+  así que la v1.2 del ISA lo prohíbe.
+- **Cuatro cosas son responsabilidad de `top.sv` y de ningún otro archivo**, porque
+  hacen falta dos o más unidades para verlas, y la cabecera de `top.sv` las
+  explica una por una: gatear la ALU con `valid`, porque `alu.sv` es la única
+  unidad funcional sin esa entrada; marcar `ILLOP` en el opcode `111` de S3, que
+  ninguna de las tres unidades del slot reclama; repartir los puertos de
+  escritura de S3 entre la ALU corta y la unidad de ronda; y sustituir el valor
+  del dato cargado en MEM, que no existe todavía en EX. Los cuatro tienen su
+  propio programa en `tb_top.sv`, y los cuatro se probaron con mutantes.
+- **Los archivos de carga entran por macro, no por parámetro.** Icarus Verilog 12
+  no puede pasar un parámetro de tipo `string` de un módulo a un submódulo: falla
+  en elaboración con `Unable to bind variable`. Una macro se expande como literal
+  en el sitio de la instancia y no cruza ninguna frontera de módulo:
+  `make top IMEM=../tb/programa.hex DMEM=../tb/datos.hex`.
 - **Compilación limpia.** `iverilog -Wall` y `verilator --lint-only -Wall` sin
   avisos. Conviene correr `make lint` antes de cada commit, no sólo cuando algo
   falla: Verilator detecta anchos inconsistentes, señales no usadas y latches
@@ -290,7 +317,8 @@ agregar el nombre a `NO_RTL`.
 | `dispatch.sv` y `psw_fault_unit.sv` | Completos y verificados |
 | Registros de segmentación | Completos y verificados |
 | `fetch.sv` y contador de programa | Completo y verificado |
-| `top.sv` | Pendiente |
+| `top.sv` y su testbench | **Completo y verificado** |
+| Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |
 | `load_file.py` y `extract_data.py` | Pendiente |
 | Subrutina `__divmod32` | Pendiente |
