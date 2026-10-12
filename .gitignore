@@ -17,6 +17,9 @@ work/
 
 # --- Python (ensamblador y herramienta de carga) ---
 __pycache__/
+
+# --- Binarios que produce el ensamblador (los regenera "make asm") ---
+tools/programas/*.hex
 *.pyc
 .venv/
 

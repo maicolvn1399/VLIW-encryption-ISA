@@ -797,7 +797,7 @@ La sintaxis es posicional y no por etiquetas de slot porque simplifica la emisi�
 | Etiquetas | Cadena alfanumérica que inicia con Letra 0 `_` seguido de letras, dígitos o `_`; terminan en `:`. Van en su línea propia o al inicio del bundle (ej., `inicio:` o `lazo_cifrado:`) |
 | Registros | `r0` a `r15`, sin distinción de mayúsculas |
 | Pares | `p0` a `p7` (corresponden a los pares de registros alineados `R2n:R2n+1`). |
-| Llaves | `k0` a `k7` (índice de llave en la bóveda de 128 bits). |
+| Llaves | `k0` a `k3`. El campo `kv` es de 2 bits, así que la bóveda tiene cuatro ranuras de 128 bits. El ensamblador rechaza `k4` y superiores |
 | Inmediatos | Precedido por `#` seguido de un decimal con signo (`#-4`, `#16`), o `0x` y hexadecimal (`0x1F`) |
 | Comentarios | Desde `//` hasta fin de línea |
 | Slot vacío | Representado exclusivamente por un guión `-`. Indica que el slot no ejecuta ninguna operación en ese ciclo. El ensamblador lo traduce automáticamente al opcode binario NOP correspondiente a ese slot. |
@@ -828,8 +828,10 @@ Para mostrar el mapeo directo entre la sintaxis del ensamblador y la representac
 **Línea de instrucción VLIW en ensamblador:**
 
 ```
-addi r1, r1, #4 | nop | lw.inc r2, #0(r0) | f4e p0, k0, #0 | nop ;
+addi r1, r1, #4 | nop | lw.inc r2, #0(r3) | f4e p5, k0, #0 | nop ;
 ```
+
+> El bundle usa `r3` como base del `lw.inc` y el par `p5` en lugar de `p0` para que no haya conflicto de escritura. Con `#0(r0)` y `p0`, el postincremento escribiría `R0` y la ronda también (porque `p0` son `R0:R1`), y `addi r1` chocaría con la mitad `R` del mismo par: son dos `WCONF` y la sección 10.3 obliga al ensamblador a rechazar el programa, así que no habría binario que mostrar.
 
 **Desglose de campos en binario por slot:**
 
@@ -838,37 +840,39 @@ addi r1, r1, #4 | nop | lw.inc r2, #0(r0) | f4e p0, k0, #0 | nop ;
    - rd (26:23): `0001` (r1)
    - rs1 (22:19): `0001` (r1)
    - imm19 (18:0): `0000000000000000100` (#4)
-   - Binario: `1000 1000 0001 0001 0000 0000 0000 0100` → `0x88110004`
+   - Binario: `1000 1000 1000 1000 0000 0000 0000 0100` → `0x88880004`
+
+   > **Cuidado con el agrupamiento.** Es tentador leer los campos como si cada uno cayera en un dígito hexadecimal, pero `rd` ocupa los bits `26:23` y `rs1` los `22:19`: los dos **cruzan** la frontera entre dígitos. Agruparlos de cuatro en cuatro desde el campo y no desde el bit 31 da `0x88110004`, que es un valor distinto y codifica `rd = r0`. El agrupamiento correcto arranca siempre en el bit 31.
 
 2. **Slot S1 [95:64] (ALU-1 – 32 bits):** `nop`
-   - Opcode (31:27): `0000` (NOP)
+   - Opcode (31:27): `00000` (NOP)
    - Reservado (26:0): `000000000000000000000000000`
    - Binario: `0000 0000 0000 0000 0000 0000 0000 0000` → `0x00000000`
 
-3. **Slot S2 [63:32] (LSU – 32 bits):** `lw.inc r2, #0(r0)`
+3. **Slot S2 [63:32] (LSU – 32 bits):** `lw.inc r2, #0(r3)`
    - Opcode (31:27): `10110` (LW.INC)
    - rd (26:23): `0010` (r2)
-   - rbase (22:19): `0000` (r0)
+   - rbase (22:19): `0011` (r3)
    - imm19 (18:0): `0000000000000000000` (#0)
-   - Binario: `1011 0001 0000 0000 0000 0000 0000 0000` → `0xB1000000`
+   - Binario: `1011 0001 0001 1000 0000 0000 0000 0000` → `0xB1180000`
 
-4. **Slot S3 [31:16] (Cripto/Bóveda – 16 bits):** `f4e p0, k0, #0`
+4. **Slot S3 [31:16] (Cripto/Bóveda – 16 bits):** `f4e p5, k0, #0`
    - Opcode (15:13): `001` (F4E)
-   - par (12:10): `000` (p0)
+   - par (12:10): `101` (p5, es decir `R10:R11`)
    - kv (9:8): `00` (k0)
    - ronda (7:6): `00` (#0)
-   - Reservado (5:0): `00000`
-   - Binario: `0010 0000 0000 0000` → `0x2000`
+   - Reservado (5:0): `000000`
+   - Binario: `0011 0100 0000 0000` → `0x3400`
 
 5. **Slot S4 [15:0] (BRU – 16 bits):** `nop`
    - Opcode (15:13): `000` (NOP)
    - Reservado (12:0): `0000000000000`
-   - Binario: `0000 0000 0000 0000 0000` → `0x0000`
+   - Binario: `0000 0000 0000 0000` → `0x0000`
 
 **Resultado en memoria, hexadecimal de 128 bits (32 digitos para `$readmemh` (Verilog)):**
 
 ```
-8811000400000000B100000020000000
+8888000400000000B118000034000000
 ```
 
 ---
@@ -987,3 +991,18 @@ Las tres se siguen de lo que la sección 1.2 ya decía y conviene dejarlas escri
 - **`WCONF` es una condición entre slots.** El slot `S2` escribe dos veces en `LW.INC`, el destino y el registro base, y la sección 4 ya define quién gana cuando coinciden: el dato cargado. Eso es comportamiento definido y no es falla. Lo mismo para las dos mitades del par en `S3`, que además nunca pueden ser el mismo registro.
 - **Nada de saltos en el delay slot.** La Entrega 1 decía que después de todo salto se ejecuta exactamente un bundle, pero no decía qué puede haber *en* ese bundle. Si trae otro salto, los dos surten efecto encadenados: el destino del primero acaba siendo el delay slot del segundo, se ejecuta una sola vez y el control cae en el destino del segundo. Es comportamiento definido y reproducible, y está medido en `tb_fetch_flow.sv`, pero casi nunca es lo que pretende quien genera el código. Se prohíbe en vez de documentarse como técnica. El resto de los slots del delay slot se usa con toda libertad; la restricción es sólo sobre `S4`.
 - **`HALT` tiene delay slot como cualquier salto.** La especificación no decía si `HALT` cuenta como salto. Cuenta: cuando está en decodificación, el bundle siguiente ya se está buscando, y anularlo exigiría una señal de vaciado que ninguna frontera del pipeline tiene. Se ejecuta, y desde ese flanco el contador queda congelado. En la práctica el generador de código debe emitir un bundle después de `HALT`, igual que después de cualquier salto.
+
+### v1.3
+
+Correcciones al propio documento, encontradas al escribir el ensamblador. No cambian el hardware ni la codificación: lo que cambia es el texto, que en estos cuatro puntos decía algo distinto de lo que el procesador hace.
+
+| Corrección | Dónde | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| Las llaves son `k0` a `k3`, no `k0` a `k7` | 10.2 | **Sí**, `k4` y superiores no existen |
+| El bundle de ejemplo tenía dos conflictos de escritura | 10.5 | No, pero era un ejemplo que el ensamblador rechaza |
+| El valor de `addi r1, r1, #4` es `0x88880004`, no `0x88110004` | 10.5 | **Sí**, si alguien verificó contra ese número |
+| La subrutina de división se llama `__div32` en todo el documento | 11 | **Sí**, la etiqueta tiene que coincidir exactamente |
+
+Las dos primeras eran errores de redacción. La tercera es la más fácil de cometer y la que más conviene entender: **`rd` ocupa los bits `26:23` y `rs1` los `22:19`, así que los dos cruzan la frontera entre dígitos hexadecimales.** Agrupar de cuatro en cuatro empezando por el campo, y no por el bit 31, produce un número que parece correcto y codifica otro registro. El agrupamiento válido arranca siempre en el bit 31, y el ensamblador es la única fuente confiable de un valor codificado: `cerbero_asm.py --listado` imprime el hexadecimal de cada bundle junto a su línea fuente.
+
+El ejemplo corregido de 10.5 es exactamente lo que produce la herramienta, y `probar_asm.py` lo tiene como caso de prueba para que no vuelva a divergir.

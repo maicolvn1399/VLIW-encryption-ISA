@@ -45,8 +45,11 @@ endif
 FLAGS      := -g2012 -Wall -Wno-timescale -I ../cpu $(INIT_DEFS)
 LINT_FLAGS := --lint-only -Wall -I../cpu
 
-CPU := ../cpu
-TB  := ../tb
+CPU   := ../cpu
+TB    := ../tb
+TOOLS := ../../tools
+PROGS := $(TOOLS)/programas
+ASM   := python3 $(TOOLS)/cerbero_asm.py
 
 PKGS  := $(wildcard $(CPU)/*_pkg.sv)
 UNITS := $(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv))
@@ -71,10 +74,19 @@ DEPS_pipeline     := $(CPU)/reg_if_id.sv $(CPU)/reg_id_ex.sv \
                      $(CPU)/reg_ex_mem.sv $(CPU)/regfile.sv
 DEPS_fetch_flow   := $(CPU)/fetch.sv $(CPU)/imem.sv $(CPU)/reg_if_id.sv \
                      $(CPU)/bru.sv
+# tb_asm carga el binario que produce el ensamblador, asi que depende del .hex
+DEPS_asm          := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/feistel.hex $(PROGS)/feistel_datos.hex
+
+# ---- Opciones de compilacion por unidad -------------------------------------
+# tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
+# por macro, porque Icarus no puede pasar un parametro string a un submodulo.
+XFLAGS_asm := -DCERBERO_IMEM_FILE='"$(PROGS)/feistel.hex"' \
+              -DCERBERO_DMEM_FILE='"$(PROGS)/feistel_datos.hex"'
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
-NO_RTL := crypto_vault latency wconf pipeline fetch_flow
+NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -85,7 +97,17 @@ WAVE_TARGETS := $(addprefix wave-,$(UNITS))
 
 .PHONY: all sim list clean lint $(UNITS) $(WAVE_TARGETS) $(LINT_TARGETS)
 
-all: sim
+all: herramientas sim
+
+# ---- Pruebas de las herramientas en Python ----------------------------------
+# El ensamblador tiene su propio arnes, con el mismo formato de salida que los
+# del RTL. Incluye la comprobacion de que programas/cobertura.s usa el 100% del
+# conjunto de instrucciones, que es lo que pide el enunciado.
+.PHONY: herramientas
+herramientas:
+	@echo ""
+	@echo "---- pruebas del ensamblador ----"
+	python3 $(TOOLS)/probar_asm.py
 
 sim: $(UNITS)
 	@echo ""
@@ -107,7 +129,22 @@ $(UNITS): %: tb_%.vvp
 .SECONDARY:
 .SECONDEXPANSION:
 tb_%.vvp: $$(PKGS) $$(if $$(filter $$*,$$(NO_RTL)),,$(CPU)/%.sv) $$(SUB_$$*) $$(DEPS_$$*) $(TB)/tb_%.sv
-	$(IVERILOG) $(FLAGS) -s tb_$* -o $@ $^
+	$(IVERILOG) $(FLAGS) $(XFLAGS_$*) -s tb_$* -o $@ $(filter %.sv,$^)
+
+# ---- Ensamblado de programas -------------------------------------------------
+# Un .s produce los dos .hex de una pasada. Se rellenan hasta el tamano de las
+# memorias para que $readmemh no avise.
+$(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
+	$(ASM) $< -o $(PROGS)/$*.hex --datos $(PROGS)/$*_datos.hex \
+	       --bundles 2048 --palabras 64
+
+.PHONY: programas cobertura
+programas: $(PROGS)/feistel.hex
+
+# Comprueba que el programa de cobertura usa el 100% del conjunto
+cobertura:
+	@echo "---- cobertura del conjunto de instrucciones ----"
+	$(ASM) $(PROGS)/cobertura.s --cobertura
 
 $(WAVE_TARGETS): wave-%: %
 	$(GTKWAVE) tb_$*.vcd &

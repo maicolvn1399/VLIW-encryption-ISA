@@ -47,6 +47,15 @@ reenvía resultados y no se detiene nunca.
 | — | Extracción del carril de una carga, en MEM | `load_align.sv` |
 | — | **El procesador completo** | `top.sv` |
 
+### Herramientas
+
+| | |
+|---|---|
+| Ensamblador propio | `tools/cerbero_asm.py` |
+| Su arnés de pruebas, 66 casos | `tools/probar_asm.py` |
+| Programa de cifrado Feistel4 | `tools/programas/feistel.s` |
+| Programa que usa el 100% del conjunto | `tools/programas/cobertura.s` |
+
 Las tres unidades de S3 se excluyen entre sí: el opcode del slot decide cuál
 actúa. O el programa cifra, o usa la ALU corta.
 
@@ -78,9 +87,12 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # compila y ejecuta los veintiún testbenches
+make            # pruebas del ensamblador y los veintidós testbenches
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
+make asm        # ensambla feistel.s y corre el binario en el RTL
+make herramientas  # solo las pruebas del ensamblador
+make cobertura  # comprueba que se usa el 100% del conjunto
 make lsu        # solo el testbench de la LSU
 make wave-lsu   # abre su forma de onda en GTKWave
 make list       # lista las unidades disponibles
@@ -136,11 +148,14 @@ quedan indefinidas porque el módulo barre el arreglo a cero antes de leerlo.
 | `pipeline` | 6 | **Integración**: mide la latencia expuesta sobre la cadena real de registros más el banco, y que el PC acompañe al bundle en ID y en EX |
 | `fetch_flow` | 23 | **Integración**: `fetch`, `imem`, `reg_if_id` y `bru` sobre un programa de saltos; un delay slot exacto por salto, el de `HALT` se ejecuta, y el caso medido de un salto dentro de un delay slot |
 | `top` | 45 | **El procesador completo** corriendo siete programas: aritmética con la latencia de 3 bundles, memoria en los tres tamaños con y sin signo, llamada y retorno, **cifrado Feistel4 completo** contra valores calculados fuera del simulador, la misma rutina denegada fuera de la región segura, `ILLOP` y `MISALIGN`, y que nada se ejecute después de `HALT` |
-| **Total** | **1646** | |
+| `asm` | 12 | **La cadena completa**: el binario que produce `cerbero_asm.py` desde `feistel.s`, corriendo en el RTL, cifrando bien y con el cierre automático de sesión al salir de la región segura |
+| **Total** | **1658** | |
+
+A eso se suman los **66 casos** de `tools/probar_asm.py`, que prueban el ensamblador: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos.
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los veintiún aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los veintidós aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -158,6 +173,12 @@ vvp -n /tmp/f.vvp ; echo "codigo de salida: $?"     # debe ser distinto de 0
 cerbero/
 ├── docs/
 │   └── isa.md                   Especificación del ISA (contrato con CE1108)
+├── tools/
+│   ├── cerbero_asm.py           Ensamblador propio
+│   ├── probar_asm.py            Sus pruebas, 66 casos
+│   └── programas/
+│       ├── feistel.s            Cifrado de un bloque con sesión de bóveda
+│       └── cobertura.s          Usa el 100% del conjunto de instrucciones
 └── src/
     ├── build/
     │   └── makefile             Punto de entrada de simulación y lint
@@ -189,6 +210,7 @@ cerbero/
         ├── tb_pipeline.sv       Latencia expuesta sobre la cadena de registros
         ├── tb_fetch_flow.sv     Búsqueda, delay slot y HALT con la BRU real
         ├── tb_top.sv            Siete programas sobre el procesador completo
+        ├── tb_asm.sv            El binario del ensamblador sobre el RTL
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -318,6 +340,10 @@ agregar el nombre a `NO_RTL`.
 | Registros de segmentación | Completos y verificados |
 | `fetch.sv` y contador de programa | Completo y verificado |
 | `top.sv` y su testbench | **Completo y verificado** |
+| Ensamblador propio | **Completo y verificado** |
+| `load_file.py` y `extract_data.py` | Pendiente |
+| Subrutina `__div32` | Pendiente |
+| Registro de cambios para CE1108 | Pendiente de enviar |
 | Registros de segmentación del pipeline | Pendiente |
 | Ensamblador propio | Pendiente |
 | `load_file.py` y `extract_data.py` | Pendiente |
