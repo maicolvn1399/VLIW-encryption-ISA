@@ -178,7 +178,7 @@ def main(volcado, ruta_original=ORIGINAL, llave=LLAVE_POR_OMISION,
         r = load_file.main([str(cifrado), "-o", str(recarga), "--cifrado"])
     inicio = BASE_POR_OMISION // 4
     check("load_file --cifrado devuelve a memoria el mismo buffer",
-          r == 0 and leer_hex(recarga)[inicio:] ==
+          r == 0 and leer_hex(recarga)[inicio:inicio + len(pal)] ==
           leer_hex(ruta_volcado)[inicio:inicio + len(pal)],
           f"devolvio {r}")
     recarga.unlink(missing_ok=True)

@@ -47,6 +47,10 @@ from formato_buffer import (BASE_POR_OMISION, BYTES_POR_BLOQUE,   # noqa: E402
                             escribir_hex)
 
 
+# La memoria de datos de top.sv: 16 384 palabras de 32 bits, 64 KB
+PALABRAS_DE_LA_MEMORIA = 16384
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Convierte un archivo en una imagen de DMEM para CERBERO-1")
@@ -63,9 +67,11 @@ def main(argv=None):
                     help="direccion de byte donde arranca el buffer "
                          f"(por omision {BASE_POR_OMISION:#x}, la region de "
                          "buffers del mapa de memoria)")
-    ap.add_argument("--palabras", type=int, default=None,
-                    help="rellena la salida hasta esta cantidad de palabras; "
-                         "con el tamano de la memoria, $readmemh no avisa")
+    ap.add_argument("--palabras", type=int, default=PALABRAS_DE_LA_MEMORIA,
+                    help="tamano de la memoria de datos en palabras de 32 "
+                         f"bits (por omision {PALABRAS_DE_LA_MEMORIA}, los "
+                         "64 KB de DMEM). La salida se rellena hasta ese "
+                         "tamano y un archivo que no quepa es un error")
     modo = ap.add_mutually_exclusive_group()
     modo.add_argument("--cifrado", action="store_true",
                       help="la entrada es un contenedor de extract_data.py "
@@ -113,6 +119,8 @@ def main(argv=None):
 
     print(f"{entrada}: {len(datos)} bytes")
     print(f"  base            {base:#010x}")
+    print(f"  zona usada      {base:#010x} a {base + 4 * len(cuerpo) - 1:#010x}"
+          f" ({4 * len(cuerpo)} bytes, cabecera incluida)")
     print(f"  bloques de 64 b {cuerpo[1]}")
     if args.cifrado:
         print(f"  contenedor cifrado de un original de {cuerpo[0]} bytes")

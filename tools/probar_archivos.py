@@ -269,11 +269,17 @@ recarga = tmp / "recarga.hex"
 with callado():
     r = load_file.main([str(contenedor), "-o", str(recarga), "--cifrado"])
 check("load_file --cifrado acepta el contenedor", r == 0, r)
-buffer_ = leer_hex(recarga)[0x1000:] if recarga.exists() else []
+# La imagen ocupa toda la memoria: el buffer y despues ceros hasta el final
+imagen_recargada = leer_hex(recarga) if recarga.exists() else []
+buffer_ = imagen_recargada[0x1000:0x1000 + len(cifrado)]
 check("y deja en memoria el mismo buffer que se volco",
       buffer_ == cifrado,
       f"obtenido {[f'{p:08X}' for p in buffer_]}\n"
       f"esperado {[f'{p:08X}' for p in cifrado]}")
+check("y el resto de la memoria en cero, hasta los 64 KB",
+      len(imagen_recargada) == 16384 and
+      not any(imagen_recargada[0x1000 + len(cifrado):]),
+      f"la imagen tiene {len(imagen_recargada)} palabras")
 
 # Sin --cifrado, la recarga trataria el contenedor como un archivo nuevo y le
 # pondria otra cabecera encima. Con el contenedor de un archivo vacio se ve
@@ -370,9 +376,9 @@ with callado():
     r = load_file.main([str(crudo), "-o", str(imagen), "--crudo"])
 check("load_file --crudo acepta 16 bytes", r == 0, r)
 check("y arma la cabecera de 16 bytes en 2 bloques, con los datos tal cual",
-      leer_hex(imagen)[0x1000:] == [16, 2, 0x03020100, 0x07060504,
-                                    0x0B0A0908, 0x0F0E0D0C],
-      [f"{p:08X}" for p in leer_hex(imagen)[0x1000:]])
+      leer_hex(imagen)[0x1000:0x1006] == [16, 2, 0x03020100, 0x07060504,
+                                          0x0B0A0908, 0x0F0E0D0C],
+      [f"{p:08X}" for p in leer_hex(imagen)[0x1000:0x1006]])
 
 crudo.write_bytes(b"")
 with callado():
