@@ -49,9 +49,18 @@
 
 // Paso 4: instalar la llave en la ranura 0. Requiere AUTH, que quedo listo tres
 // bundles despues del LOGIN.
-        - | - | - | ksetw k0, #0, r5 ;
-        - | - | - | ksetw k0, #1, r6 ;
-        - | - | - | ksetw k0, #2, r7 ;
-        - | - | - | ksetw k0, #3, r8 ;
+//
+// En los mismos bundles, las dos ALU borran la contrasena (r1 a r4) y la llave
+// (r5 a r8). Una vez en la boveda, ninguna de las dos tiene por que seguir en
+// registros, donde cualquier codigo que corra despues podria leerlas.
+//
+// Borrar un registro en el mismo bundle en que KSETW lo lee es seguro: todos
+// los slots de un bundle leen el estado de los registros PREVIO al bundle, asi
+// que cada KSETW toma la palabra de la llave antes de que se borre. Por eso el
+// borrado no agrega ningun bundle al programa.
+        movi r1, #0 | movi r2, #0 | - | ksetw k0, #0, r5 ;
+        movi r3, #0 | movi r4, #0 | - | ksetw k0, #1, r6 ;
+        movi r5, #0 | movi r6, #0 | - | ksetw k0, #2, r7 ;
+        movi r7, #0 | movi r8, #0 | - | ksetw k0, #3, r8 ;
         - ;
         - ;
