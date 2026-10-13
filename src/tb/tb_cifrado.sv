@@ -333,9 +333,10 @@ module tb_cifrado;
 
     malos = 0;
     for (i = 0; i < N_WORDS; i = i + 1) begin
-      if (i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras) continue;
-      if (es_subllave(cif.u_dmem.storage[i])) malos = malos + 1;
-      if (es_subllave(des.u_dmem.storage[i])) malos = malos + 1;
+      if (!(i >= W_BUF + 2 && i < W_BUF + 2 + n_palabras)) begin
+        if (es_subllave(cif.u_dmem.storage[i])) malos = malos + 1;
+        if (es_subllave(des.u_dmem.storage[i])) malos = malos + 1;
+      end
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 
