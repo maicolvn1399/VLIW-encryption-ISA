@@ -32,3 +32,10 @@ desktop.ini
 # --- Artefactos de simulacion generados en src/build ---
 src/build/*.vvp
 src/build/*.vcd
+
+# Salidas de las simulaciones y de make correr
+src/build/*.hex
+src/build/*.bin
+src/build/*.lst
+src/build/*.txt
+src/build/llave_gen/
