@@ -54,7 +54,7 @@ ASM   := python3 $(TOOLS)/cerbero_asm.py
 PKGS  := $(wildcard $(CPU)/*_pkg.sv)
 # tb_descifrado necesita un archivo cifrado de entrada, asi que no entra en
 # "make sim": se corre con "make solo-descifrar".
-UNITS := $(filter-out descifrado,$(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv)))
+UNITS := $(filter-out descifrado programa,$(patsubst $(TB)/tb_%.sv,%,$(wildcard $(TB)/tb_*.sv)))
 
 # Unidades con modulo propio en ../cpu. Se excluyen los testbenches de
 # integracion, que no tienen un ../cpu/<nombre>.sv detras.
@@ -96,6 +96,8 @@ DEPS_cifrado      := $(wildcard $(CPU)/*.sv) \
 # tb_cifrado carga el archivo
 DEPS_descifrado   := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/descifrar_archivo.hex
+# tb_programa carga en tiempo de simulacion el programa que se le indique
+DEPS_programa     := $(wildcard $(CPU)/*.sv)
 # tb_credencial corre cifrar_archivo sobre un procesador con otro ROT_SECRET
 DEPS_credencial   := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/cifrar_archivo.hex \
@@ -112,7 +114,7 @@ XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
 NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo cifrado \
-          credencial descifrado
+          credencial descifrado programa
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -315,6 +317,76 @@ solo-descifrar: tb_descifrado.vvp contenedor_libre.hex $(PROGRAMAS_LLAVE)
 	        descifrado_libre.hex descifrado_libre.bin $(ORIGINAL) \
 	        $(ARG_LLAVE) $(ARG_CRUDO)
 
+# ---- Correr un programa cualquiera ---------------------------------------------
+#   make correr PROG=fibonacci.s MOSTRAR=0x100 PALABRAS=47
+#
+# Ensambla el programa y lo corre en el procesador completo hasta HALT. Muestra
+# cuando sube y baja AUTH, la primera falla, los registros y el PSW.
+#
+#   PROG=      el programa en ensamblador (obligatorio). Basta el nombre, con o
+#              sin .s: se busca aqui y en tools/programas
+#   MEMORIA=   imagen inicial de la memoria de datos, por ejemplo la que genera
+#              load_file.py. Sin ella, la memoria arranca con el .data del
+#              programa
+#   VOLCADO=   archivo donde guardar la memoria de datos completa al terminar,
+#              para sacar el resultado con extract_data.py
+#   LLAVE=     solo para cifrar_archivo.s y descifrar_archivo.s: corre una copia
+#              del programa con esa llave, generada por llave.py
+#   MOSTRAR=   direccion desde donde mostrar la memoria en pantalla, y
+#   PALABRAS=  cuantas palabras de 32 bits mostrar
+#   CICLOS=    tope de ciclos (por omision 2 000 000)
+#   TRAZA=     detalle de una ventana de ciclos: TRAZA=30 son los ciclos 1 a
+#              30, TRAZA=100-130 los ciclos 100 a 130 (hasta 500). Imprime el
+#              diagrama del pipeline (una fila por bundle, una columna por
+#              ciclo) y la lista de eventos: registros y memoria escritos,
+#              saltos, banderas, boveda y fallas
+#
+# Cifrar un archivo es cargar, correr y extraer:
+#
+#   python3 ../../tools/load_file.py --input foto.png --output entrada.hex
+#   make correr PROG=cifrar_archivo.s MEMORIA=entrada.hex VOLCADO=salida.hex
+#   python3 ../../tools/extract_data.py salida.hex -o cifrado.bin --cifrado
+PROG     ?=
+MEMORIA  ?=
+VOLCADO  ?=
+MOSTRAR  ?= 0
+PALABRAS ?= 0
+CICLOS   ?= 2000000
+TRAZA    ?= 0
+
+# PROG puede ser solo el nombre del programa, con o sin .s: si no trae
+# carpeta, se busca primero aqui y despues en tools/programas. Una ruta
+# completa se usa tal cual.
+PROG_CON_S   = $(if $(filter %.s,$(PROG)),$(PROG),$(PROG).s)
+PROG_ENCONTRADO = $(if $(findstring /,$(PROG_CON_S)),$(PROG_CON_S),$(if \
+                  $(wildcard $(PROG_CON_S)),$(PROG_CON_S),$(PROGS)/$(PROG_CON_S)))
+
+# Con LLAVE, el programa que se ensambla es la copia que genera llave.py
+PROG_A_ENSAMBLAR = $(if $(strip $(LLAVE)),$(LLAVE_DIR)/$(notdir $(PROG_CON_S)),$(PROG_ENCONTRADO))
+
+.PHONY: correr
+correr: tb_programa.vvp
+	@test -n "$(PROG)" || { echo "error: falta PROG=programa.s"; exit 2; }
+	@test -f "$(PROG_ENCONTRADO)" || \
+	    { echo "error: no se encontro $(PROG_CON_S) ni aqui ni en tools/programas"; \
+	      exit 2; }
+	@test -z "$(MEMORIA)" -o -f "$(MEMORIA)" || \
+	    { echo "error: no se encontro la imagen de memoria $(MEMORIA)"; exit 2; }
+ifneq ($(strip $(LLAVE)),)
+	python3 $(TOOLS)/llave.py "$(LLAVE)" --salida $(LLAVE_DIR)
+	@test -f "$(PROG_A_ENSAMBLAR)" || \
+	    { echo "error: LLAVE solo se aplica a cifrar_archivo.s y descifrar_archivo.s"; \
+	      exit 2; }
+endif
+	$(ASM) $(PROG_A_ENSAMBLAR) -o programa.hex --datos programa_datos.hex \
+	       --bundles 2048 --palabras 16384 --listado programa.lst
+	@python3 $(TOOLS)/listado_a_texto.py programa.lst -o programa_texto.txt
+	$(VVP) -n tb_programa.vvp +PROGRAMA=programa.hex +TEXTO=programa_texto.txt \
+	       +DATOS=$(if $(MEMORIA),$(MEMORIA),$$(grep -q "[0-9A-Fa-f]" programa_datos.hex && echo programa_datos.hex)) \
+	       +VOLCADO=$(VOLCADO) +CICLOS=$(CICLOS) \
+	       +MOSTRAR=$(shell printf '%d' $(MOSTRAR)) +PALABRAS=$(PALABRAS) \
+	       +TRAZA=$(TRAZA)
+
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:
 	@echo "---- cobertura del conjunto de instrucciones ----"
@@ -346,6 +418,6 @@ clean:
 	rm -f *.vvp *.vcd cifrado_volcado.hex cifrado_volcado.bin
 	rm -f archivo_libre.hex cifrado_libre.hex cifrado_libre.bin
 	rm -f contenedor_libre.hex descifrado_libre.hex descifrado_libre.bin
-	rm -f criptograma.bin
+	rm -f criptograma.bin programa.hex programa_datos.hex programa.lst programa_texto.txt
 	rm -rf llave_gen
 	rm -f $(PROGS)/*.hex
