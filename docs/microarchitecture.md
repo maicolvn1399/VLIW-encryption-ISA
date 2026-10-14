@@ -61,16 +61,24 @@ Hay dos memorias separadas, una para instrucciones y otra para datos. A esto se 
 
 ![Diagrama de bloques de CERBERO-1](diagrama_bloques.svg)
 
-El diagrama se lee de izquierda a derecha, en el orden en que avanza un bundle
-por las cinco etapas (sección 2). Las barras grises son los registros de
-segmentación. La línea punteada entre MEM y WB marca una frontera sin registro
-propio: la forman los flancos del banco de registros y del PSW (sección 2.2).
-Dos señales van hacia atrás:
+### 1.3 Diagrama de bloques
 
-- **El PSW (en azul):** lleva las banderas y `AUTH` a la BRU, en ID, y a
-  `SETcc`/`MFPSW`, en EX.
-- **`AUTH` y `AUTHFAIL` (en rojo):** van directo de la bóveda al PSW, sin
-  registro de por medio (sección 8.3).
+![Diagrama de bloques de CERBERO-1](imgs/VLIW_CPU.png)
+
+El diagrama se lee de izquierda a derecha, en el orden en que un bundle avanza por las cinco etapas. Las barras grises son las fronteras entre etapas: IF/ID, ID/EX y EX/MEM son registros de segmentación, y MEM/WB la forman el propio banco de registros y el PSW, que escriben en el flanco que abre WB.
+
+- **IF:** el PC elige entre el bundle siguiente (PC + 16) y el destino de un
+  salto, y lee el bundle de la memoria de instrucciones.
+- **ID:** el decodificador separa los cinco slots, el banco lee los registros y
+  la unidad de saltos decide si saltar.
+- **EX:** trabajan en paralelo las dos ALU, la LSU con la memoria de datos, y en
+  el slot S3 una de tres unidades: la ALU corta, o la bóveda junto con la unidad
+  Feistel4.
+- **MEM:** la alineación de carga extrae el dato leído de la memoria.
+- **WB:** se escriben el banco de registros y el PSW.
+
+Las líneas negras son datos. La azul es el PSW, que vuelve a la unidad de saltos y a las ALU. La roja es `AUTH`, que va directo de la bóveda al PSW sin pasar por registros.
+
 
 
 ---
