@@ -1,0 +1,1095 @@
+$date
+	Wed Oct 14 19:29:43 2026
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module tb_pipeline $end
+$var wire 224 ! wval_wb [223:0] $end
+$var wire 28 " widx_wb [27:0] $end
+$var wire 7 # wen_wb [6:0] $end
+$var wire 1 $ valid_mem $end
+$var wire 1 % valid_id $end
+$var wire 1 & valid_ex $end
+$var wire 1 ' s4_fault_ex $end
+$var wire 3 ( s4_cause_ex [2:0] $end
+$var wire 16 ) s3_ex [15:0] $end
+$var wire 32 * s2_mem [31:0] $end
+$var wire 32 + s2_ex [31:0] $end
+$var wire 32 , s1_ex [31:0] $end
+$var wire 32 - s0_ex [31:0] $end
+$var wire 288 . rval_ex [287:0] $end
+$var wire 288 / rval [287:0] $end
+$var wire 32 0 pc_id [31:0] $end
+$var wire 32 1 pc_ex [31:0] $end
+$var wire 1 2 link_we_ex $end
+$var wire 32 3 link_val_ex [31:0] $end
+$var wire 4 4 link_idx_ex [3:0] $end
+$var wire 1 5 flags_we_mem $end
+$var wire 4 6 flags_mem [3:0] $end
+$var wire 5 7 fault_mem [4:0] $end
+$var wire 512 8 dbg [511:0] $end
+$var wire 1 9 conflicto $end
+$var wire 15 : cause_mem [14:0] $end
+$var wire 2 ; addr_lo_mem [1:0] $end
+$var parameter 32 < CICLO_FIN $end
+$var parameter 32 = ESPERADA $end
+$var parameter 32 > NUEVO $end
+$var parameter 32 ? PC0 $end
+$var parameter 32 @ PRODUCTOR $end
+$var parameter 32 A PROD_VIEJO $end
+$var parameter 32 B REG $end
+$var parameter 32 C VIEJO $end
+$var reg 1 D clk $end
+$var reg 32 E pc_if [31:0] $end
+$var reg 36 F ridx [35:0] $end
+$var reg 1 G rst_n $end
+$var reg 1 H valid_if $end
+$var reg 7 I wen_ex [6:0] $end
+$var reg 28 J widx_ex [27:0] $end
+$var reg 224 K wval_ex [223:0] $end
+$var integer 32 L c [31:0] $end
+$var integer 32 M m [31:0] $end
+$var integer 32 N malos_pc_ex [31:0] $end
+$var integer 32 O malos_pc_id [31:0] $end
+$var integer 32 P n [31:0] $end
+$var integer 32 Q primer_m [31:0] $end
+$var integer 32 R tests_failed [31:0] $end
+$var integer 32 S tests_run [31:0] $end
+$var integer 32 T ultimo_viejo [31:0] $end
+$scope module u_ex_mem $end
+$var wire 2 U addr_lo_in [1:0] $end
+$var wire 15 V cause_in [14:0] $end
+$var wire 1 D clk $end
+$var wire 5 W fault_in [4:0] $end
+$var wire 4 X flags_in [3:0] $end
+$var wire 1 Y flags_we_in $end
+$var wire 1 G rst_n $end
+$var wire 7 Z write_enable_in [6:0] $end
+$var wire 28 [ write_index_in [27:0] $end
+$var wire 224 \ write_value_in [223:0] $end
+$var wire 1 & valid_in $end
+$var wire 32 ] s2_inst_in [31:0] $end
+$var reg 2 ^ addr_lo_out [1:0] $end
+$var reg 15 _ cause_out [14:0] $end
+$var reg 5 ` fault_out [4:0] $end
+$var reg 4 a flags_out [3:0] $end
+$var reg 1 5 flags_we_out $end
+$var reg 32 b s2_inst_out [31:0] $end
+$var reg 1 $ valid_out $end
+$var reg 7 c write_enable_out [6:0] $end
+$var reg 28 d write_index_out [27:0] $end
+$var reg 224 e write_value_out [223:0] $end
+$upscope $end
+$scope module u_id_ex $end
+$var wire 1 D clk $end
+$var wire 4 f link_idx_in [3:0] $end
+$var wire 32 g link_val_in [31:0] $end
+$var wire 1 h link_we_in $end
+$var wire 1 G rst_n $end
+$var wire 32 i s0_inst_in [31:0] $end
+$var wire 32 j s1_inst_in [31:0] $end
+$var wire 32 k s2_inst_in [31:0] $end
+$var wire 16 l s3_inst_in [15:0] $end
+$var wire 3 m s4_cause_in [2:0] $end
+$var wire 1 n s4_fault_in $end
+$var wire 1 % valid_in $end
+$var wire 288 o rval_in [287:0] $end
+$var wire 32 p pc_in [31:0] $end
+$var reg 4 q link_idx_out [3:0] $end
+$var reg 32 r link_val_out [31:0] $end
+$var reg 1 2 link_we_out $end
+$var reg 32 s pc_out [31:0] $end
+$var reg 288 t rval_out [287:0] $end
+$var reg 32 u s0_inst_out [31:0] $end
+$var reg 32 v s1_inst_out [31:0] $end
+$var reg 32 w s2_inst_out [31:0] $end
+$var reg 16 x s3_inst_out [15:0] $end
+$var reg 3 y s4_cause_out [2:0] $end
+$var reg 1 ' s4_fault_out $end
+$var reg 1 & valid_out $end
+$upscope $end
+$scope module u_if_id $end
+$var wire 1 D clk $end
+$var wire 32 z pc_in [31:0] $end
+$var wire 1 G rst_n $end
+$var wire 1 H valid_in $end
+$var reg 32 { pc_out [31:0] $end
+$var reg 1 % valid_out $end
+$upscope $end
+$scope module u_rf $end
+$var wire 1 D clk $end
+$var wire 36 | read_register_index [35:0] $end
+$var wire 1 G reset_n $end
+$var wire 7 } write_enable [6:0] $end
+$var wire 28 ~ write_register_index [27:0] $end
+$var wire 224 !" write_value [223:0] $end
+$var wire 1 9 write_conflict_detected $end
+$var wire 49 "" pair_targets_same_register [48:0] $end
+$var wire 512 #" debug_register_values [511:0] $end
+$var parameter 32 $" NUM_READ_PORTS $end
+$var parameter 32 %" NUM_REGISTERS $end
+$var parameter 32 &" NUM_WRITE_PORTS $end
+$var parameter 32 '" REGISTER_INDEX_WIDTH $end
+$var parameter 32 (" REGISTER_WIDTH $end
+$var reg 288 )" read_register_value [287:0] $end
+$var integer 32 *" read_port [31:0] $end
+$var integer 32 +" register_to_clear [31:0] $end
+$var integer 32 ," write_port [31:0] $end
+$scope begin g_debug_values[0] $end
+$var parameter 2 -" register_number $end
+$upscope $end
+$scope begin g_debug_values[1] $end
+$var parameter 2 ." register_number $end
+$upscope $end
+$scope begin g_debug_values[2] $end
+$var parameter 3 /" register_number $end
+$upscope $end
+$scope begin g_debug_values[3] $end
+$var parameter 3 0" register_number $end
+$upscope $end
+$scope begin g_debug_values[4] $end
+$var parameter 4 1" register_number $end
+$upscope $end
+$scope begin g_debug_values[5] $end
+$var parameter 4 2" register_number $end
+$upscope $end
+$scope begin g_debug_values[6] $end
+$var parameter 4 3" register_number $end
+$upscope $end
+$scope begin g_debug_values[7] $end
+$var parameter 4 4" register_number $end
+$upscope $end
+$scope begin g_debug_values[8] $end
+$var parameter 5 5" register_number $end
+$upscope $end
+$scope begin g_debug_values[9] $end
+$var parameter 5 6" register_number $end
+$upscope $end
+$scope begin g_debug_values[10] $end
+$var parameter 5 7" register_number $end
+$upscope $end
+$scope begin g_debug_values[11] $end
+$var parameter 5 8" register_number $end
+$upscope $end
+$scope begin g_debug_values[12] $end
+$var parameter 5 9" register_number $end
+$upscope $end
+$scope begin g_debug_values[13] $end
+$var parameter 5 :" register_number $end
+$upscope $end
+$scope begin g_debug_values[14] $end
+$var parameter 5 ;" register_number $end
+$upscope $end
+$scope begin g_debug_values[15] $end
+$var parameter 5 <" register_number $end
+$upscope $end
+$scope begin g_first_port[0] $end
+$var parameter 2 =" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 >" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 ?" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 @" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 A" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 B" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 C" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 D" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[1] $end
+$var parameter 2 E" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 F" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 G" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 H" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 I" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 J" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 K" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 L" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[2] $end
+$var parameter 3 M" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 N" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 O" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 P" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 Q" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 R" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 S" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 T" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[3] $end
+$var parameter 3 U" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 V" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 W" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 X" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 Y" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 Z" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 [" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 \" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[4] $end
+$var parameter 4 ]" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 ^" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 _" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 `" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 a" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 b" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 c" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 d" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[5] $end
+$var parameter 4 e" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 f" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 g" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 h" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 i" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 j" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 k" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 l" second_write_port $end
+$scope begin g_compare_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope begin g_first_port[6] $end
+$var parameter 4 m" first_write_port $end
+$scope begin g_second_port[0] $end
+$var parameter 2 n" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[1] $end
+$var parameter 2 o" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[2] $end
+$var parameter 3 p" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[3] $end
+$var parameter 3 q" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[4] $end
+$var parameter 4 r" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[5] $end
+$var parameter 4 s" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$scope begin g_second_port[6] $end
+$var parameter 4 t" second_write_port $end
+$scope begin g_unused_pair $end
+$upscope $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope task check_int $end
+$upscope $end
+$scope task resumen $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b110 t"
+b101 s"
+b100 r"
+b11 q"
+b10 p"
+b1 o"
+b0 n"
+b110 m"
+b110 l"
+b101 k"
+b100 j"
+b11 i"
+b10 h"
+b1 g"
+b0 f"
+b101 e"
+b110 d"
+b101 c"
+b100 b"
+b11 a"
+b10 `"
+b1 _"
+b0 ^"
+b100 ]"
+b110 \"
+b101 ["
+b100 Z"
+b11 Y"
+b10 X"
+b1 W"
+b0 V"
+b11 U"
+b110 T"
+b101 S"
+b100 R"
+b11 Q"
+b10 P"
+b1 O"
+b0 N"
+b10 M"
+b110 L"
+b101 K"
+b100 J"
+b11 I"
+b10 H"
+b1 G"
+b0 F"
+b1 E"
+b110 D"
+b101 C"
+b100 B"
+b11 A"
+b10 @"
+b1 ?"
+b0 >"
+b0 ="
+b1111 <"
+b1110 ;"
+b1101 :"
+b1100 9"
+b1011 8"
+b1010 7"
+b1001 6"
+b1000 5"
+b111 4"
+b110 3"
+b101 2"
+b100 1"
+b11 0"
+b10 /"
+b1 ."
+b0 -"
+b100000 ("
+b100 '"
+b111 &"
+b10000 %"
+b1001 $"
+b10101010101010101010101010101010 C
+b101 B
+b0 A
+b101 @
+b1000000000000 ?
+b1011101011011100000011011110 >
+b11 =
+b1110 <
+$end
+#0
+$dumpvars
+bx ,"
+bx +"
+bx *"
+bx )"
+bx #"
+b0x000000xx00000xxx0000xxxx000xxxxx00xxxxxx0 ""
+bx !"
+bx ~
+bx }
+b0 |
+bx {
+b0 z
+bx y
+bx x
+bx w
+bx v
+bx u
+bx t
+bx s
+bx r
+bx q
+bx p
+bx o
+0n
+b0 m
+b0 l
+b0 k
+b0 j
+b0 i
+0h
+b0 g
+b0 f
+bx e
+bx d
+bx c
+bx b
+bx a
+bx `
+bx _
+bx ^
+bx ]
+b0 \
+b0 [
+b0 Z
+0Y
+b0 X
+b0 W
+b0 V
+b0 U
+b11111111111111111111111111111111 T
+b0 S
+b0 R
+b11111111111111111111111111111111 Q
+bx P
+b0 O
+b0 N
+bx M
+bx L
+b0 K
+b0 J
+b0 I
+0H
+0G
+b0 F
+b0 E
+0D
+bx ;
+bx :
+x9
+bx 8
+bx 7
+bx 6
+x5
+bx 4
+bx 3
+x2
+bx 1
+bx 0
+bx /
+bx .
+bx -
+bx ,
+bx +
+bx *
+bx )
+bx (
+x'
+x&
+x%
+x$
+bx #
+bx "
+bx !
+$end
+#5000
+09
+b0 ""
+b0 0
+b0 p
+b0 {
+0%
+b0 8
+b0 #"
+b0 (
+b0 y
+0'
+b0 3
+b0 r
+b0 4
+b0 q
+02
+b0 .
+b0 t
+b0 )
+b0 x
+b0 +
+b0 ]
+b0 w
+b0 ,
+b0 v
+b0 -
+b0 u
+b0 1
+b0 s
+0&
+b0 6
+b0 a
+05
+b0 :
+b0 _
+b0 7
+b0 `
+b0 !
+b0 e
+b0 !"
+b0 "
+b0 d
+b0 ~
+b0 #
+b0 c
+b0 }
+b0 ;
+b0 ^
+b0 *
+b0 b
+0$
+b10000 +"
+1D
+#10000
+b0 /
+b0 o
+b0 )"
+b1001 *"
+0D
+#15000
+b10000 +"
+1D
+#16000
+b0 L
+1G
+#20000
+b1001 *"
+0D
+#21000
+b11111111111111111111111111111110 P
+b101 F
+b101 |
+b1000000000000 E
+b1000000000000 z
+1H
+#25000
+b1000000000000 0
+b1000000000000 p
+b1000000000000 {
+1%
+b11111111111111111111111111111111 ,"
+1D
+#26000
+b1 L
+b11111111111111111111111111111111 M
+#30000
+b1001 *"
+0D
+#31000
+b11111111111111111111111111111111 P
+b101 F
+b101 |
+b1000000010000 E
+b1000000010000 z
+#35000
+b1000000000000 1
+b1000000000000 s
+1&
+b1000000010000 0
+b1000000010000 p
+b1000000010000 {
+b11111111111111111111111111111111 ,"
+1D
+#36000
+b10 L
+b0 M
+#40000
+b1001 *"
+0D
+#41000
+b10101010101010101010101010101010 K
+b10101010101010101010101010101010 \
+b101 J
+b101 [
+b1 I
+b1 Z
+b0 P
+b101 F
+b101 |
+b1000000100000 E
+b1000000100000 z
+#45000
+b1000000100000 0
+b1000000100000 p
+b1000000100000 {
+b1000000010000 1
+b1000000010000 s
+b10101010101010101010101010101010 !
+b10101010101010101010101010101010 e
+b10101010101010101010101010101010 !"
+b101 "
+b101 d
+b101 ~
+b1 #
+b1 c
+b1 }
+1$
+b11111111111111111111111111111111 ,"
+1D
+#46000
+b11 L
+b1 M
+#50000
+b1001 *"
+0D
+#51000
+b0 K
+b0 \
+b0 J
+b0 [
+b0 I
+b0 Z
+b1 P
+b101 F
+b101 |
+b1000000110000 E
+b1000000110000 z
+#55000
+b0 !
+b0 e
+b0 !"
+b0 "
+b0 d
+b0 ~
+b0 #
+b0 c
+b0 }
+b1000000100000 1
+b1000000100000 s
+b101010101010101010101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 8
+b101010101010101010101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 #"
+b1000000110000 0
+b1000000110000 p
+b1000000110000 {
+b11111111111111111111111111111111 ,"
+1D
+#56000
+b100 L
+b10 M
+#60000
+b10101010101010101010101010101010 /
+b10101010101010101010101010101010 o
+b10101010101010101010101010101010 )"
+b1001 *"
+0D
+#61000
+b10 P
+b101 F
+b101 |
+b1000001000000 E
+b1000001000000 z
+#65000
+b1000001000000 0
+b1000001000000 p
+b1000001000000 {
+b10101010101010101010101010101010 .
+b10101010101010101010101010101010 t
+b1000000110000 1
+b1000000110000 s
+b11111111111111111111111111111111 ,"
+1D
+#66000
+b101 L
+b11 T
+b11 M
+#70000
+b1001 *"
+0D
+#71000
+b11 P
+b101 F
+b101 |
+b1000001010000 E
+b1000001010000 z
+#75000
+b1000001000000 1
+b1000001000000 s
+b1000001010000 0
+b1000001010000 p
+b1000001010000 {
+b11111111111111111111111111111111 ,"
+1D
+#76000
+b110 L
+b100 T
+b100 M
+#80000
+b1001 *"
+0D
+#81000
+b100 P
+b101 F
+b101 |
+b1000001100000 E
+b1000001100000 z
+#85000
+b1000001100000 0
+b1000001100000 p
+b1000001100000 {
+b1000001010000 1
+b1000001010000 s
+b11111111111111111111111111111111 ,"
+1D
+#86000
+b111 L
+b101 T
+b101 M
+#90000
+b1001 *"
+0D
+#91000
+b1011101011011100000011011110 K
+b1011101011011100000011011110 \
+b101 J
+b101 [
+b1 I
+b1 Z
+b101 P
+b101 F
+b101 |
+b1000001110000 E
+b1000001110000 z
+#95000
+b1011101011011100000011011110 !
+b1011101011011100000011011110 e
+b1011101011011100000011011110 !"
+b101 "
+b101 d
+b101 ~
+b1 #
+b1 c
+b1 }
+b1000001100000 1
+b1000001100000 s
+b1000001110000 0
+b1000001110000 p
+b1000001110000 {
+b11111111111111111111111111111111 ,"
+1D
+#96000
+b1000 L
+b110 T
+b110 M
+#100000
+b1001 *"
+0D
+#101000
+b0 K
+b0 \
+b0 J
+b0 [
+b0 I
+b0 Z
+b110 P
+b101 F
+b101 |
+b1000010000000 E
+b1000010000000 z
+#105000
+b1000010000000 0
+b1000010000000 p
+b1000010000000 {
+b10111010110111000000110111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 8
+b10111010110111000000110111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 #"
+b1000001110000 1
+b1000001110000 s
+b0 !
+b0 e
+b0 !"
+b0 "
+b0 d
+b0 ~
+b0 #
+b0 c
+b0 }
+b11111111111111111111111111111111 ,"
+1D
+#106000
+b1001 L
+b111 T
+b111 M
+#110000
+b1011101011011100000011011110 /
+b1011101011011100000011011110 o
+b1011101011011100000011011110 )"
+b1001 *"
+0D
+#111000
+b111 P
+b101 F
+b101 |
+b1000010010000 E
+b1000010010000 z
+#115000
+b1011101011011100000011011110 .
+b1011101011011100000011011110 t
+b1000010000000 1
+b1000010000000 s
+b1000010010000 0
+b1000010010000 p
+b1000010010000 {
+b11111111111111111111111111111111 ,"
+1D
+#116000
+b1010 L
+b1000 Q
+b1000 M
+#120000
+b1001 *"
+0D
+#121000
+b1000 P
+b101 F
+b101 |
+b1000010100000 E
+b1000010100000 z
+#125000
+b1000010100000 0
+b1000010100000 p
+b1000010100000 {
+b1000010010000 1
+b1000010010000 s
+b11111111111111111111111111111111 ,"
+1D
+#126000
+b1011 L
+b1001 M
+#130000
+b1001 *"
+0D
+#131000
+b1001 P
+b101 F
+b101 |
+b1000010110000 E
+b1000010110000 z
+#135000
+b1000010100000 1
+b1000010100000 s
+b1000010110000 0
+b1000010110000 p
+b1000010110000 {
+b11111111111111111111111111111111 ,"
+1D
+#136000
+b1100 L
+b1010 M
+#140000
+b1001 *"
+0D
+#141000
+b1010 P
+b101 F
+b101 |
+b1000011000000 E
+b1000011000000 z
+#145000
+b1000011000000 0
+b1000011000000 p
+b1000011000000 {
+b1000010110000 1
+b1000010110000 s
+b11111111111111111111111111111111 ,"
+1D
+#146000
+b1101 L
+b1011 M
+#150000
+b1001 *"
+0D
+#151000
+b1011 P
+b101 F
+b101 |
+b1000011010000 E
+b1000011010000 z
+#155000
+b1000011000000 1
+b1000011000000 s
+b1000011010000 0
+b1000011010000 p
+b1000011010000 {
+b11111111111111111111111111111111 ,"
+1D
+#156000
+b1110 L
+b1100 M
+#160000
+b1001 *"
+0D
+#161000
+b1100 P
+b101 F
+b101 |
+b1000011100000 E
+b1000011100000 z
+#165000
+b1000011100000 0
+b1000011100000 p
+b1000011100000 {
+b1000011010000 1
+b1000011010000 s
+b11111111111111111111111111111111 ,"
+1D
+#166000
+b110 S
+b1111 L
+b1101 M
