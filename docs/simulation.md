@@ -244,7 +244,9 @@ El programa calcula F(0) a F(46) y los guarda en memoria desde `0x100`, uno por 
 `escrituras_fibonacci.txt` tiene cada escritura, con su ciclo e instrucción.
 Por ejemplo, el `sw` que guarda F(46)
 
-![make correr PROG=fibonacci](imgs/ejecucion_fibonacci.png)(imgs/resultado_fibonacci.png)
+![make correr PROG=fibonacci](imgs/ejecucion_fibonacci.png)
+
+![resultado de fibonacci al finalizar ejecución](imgs/resultado_fibonacci.png)
 
 
 ### 7.2 Cifrar un archivo
@@ -290,7 +292,7 @@ xxd cifrado.bin
 - En `cifrado.bin`, los primeros 8 bytes son la cabecera (23 bytes, 3
   bloques), que viaja sin cifrar. El resto es el criptograma.
 
-![Cifrado con make correr](imgs/sim_cifrado.png)
+
 
 ### 7.3 Descifrar y comparar con el original
 
