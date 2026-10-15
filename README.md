@@ -10,6 +10,9 @@ Escuela de Ingeniería en Computadores, Instituto Tecnológico de Costa Rica.
 | Profesor | Dr.-Ing. Jeferson González Gómez |
 | Integrantes | Araya Porras Luis Diego (2021086423) · Retana Murillo Braulio (2021050678) · Valverde Navarro Michael (2020044189) · Piedra Montero Joseph (2023047830) · Muñoz Alvarado Adrián (2023207992) |
 | Especificación | [`docs/isa.md`](docs/isa.md) |
+| Microarquitectura | [`docs/microarchitecture.md`](docs/microarchitecture.md) |
+| Modelo de simulación | [`docs/simulation.md`](docs/simulation.md) |
+| Integración con CE1108 | [`docs/compiler-integration.md`](docs/compiler-integration.md) |
 
 ---
 
@@ -56,7 +59,7 @@ reenvía resultados y no se detiene nunca.
 | Archivo a imagen de memoria | `tools/load_file.py` |
 | Volcado de memoria a archivo | `tools/extract_data.py` |
 | Formato del buffer, compartido por las dos | `tools/formato_buffer.py` |
-| Su arnés de pruebas, 53 casos | `tools/probar_archivos.py` |
+| Su arnés de pruebas, 54 casos | `tools/probar_archivos.py` |
 | La llave desde la línea de comandos, y sus 19 casos | `tools/llave.py`, `tools/probar_llave.py` |
 | El flujo completo contra un modelo de referencia, 7 casos | `tools/probar_flujo.py` |
 | Ejecutable NOVA a imágenes de memoria (puente con CE1108) | `tools/novac_image.py` |
@@ -79,18 +82,36 @@ actúa. O el programa cifra, o usa la ALU corta.
 
 | Herramienta | Versión | Para qué |
 |---|---|---|
-| [Icarus Verilog](https://steveicarus.github.io/iverilog/) | 11 o superior | Simulación. La 10 no soporta `always_comb` ni `logic` |
-| [Verilator](https://verilator.org/) | 5.x | Análisis estático. Opcional pero recomendado |
+| [Icarus Verilog](https://steveicarus.github.io/iverilog/) | 12 o superior, probado en 13.0 | Simulación, con `-g2012`. La 10 no soporta `always_comb` ni `logic` |
+| [Python](https://www.python.org/) | 3.8 o superior | Ensamblador, herramientas de carga y extracción, y sus pruebas. Solo biblioteca estándar, sin paquetes extra |
+| [Verilator](https://verilator.org/) | 5.x | Solo análisis estático (`make lint`); la simulación es con Icarus. Opcional pero recomendado |
 | [GTKWave](https://gtkwave.sourceforge.net/) | cualquiera | Ver formas de onda. Opcional |
-| `make` | cualquiera | |
+| `make` | GNU Make | |
 
 ```bash
 # Ubuntu, Debian y WSL
-sudo apt install iverilog verilator gtkwave
+sudo apt install iverilog verilator gtkwave make python3
 
 # macOS
-brew install icarus-verilog verilator gtkwave
+brew install icarus-verilog verilator gtkwave python
 ```
+
+**Windows.** Lo más directo es WSL con los mismos paquetes de Ubuntu. Sin
+WSL, con [MSYS2](https://www.msys2.org/):
+
+```bash
+pacman -S mingw-w64-x86_64-iverilog mingw-w64-x86_64-make
+```
+
+y Python desde python.org. Dos detalles:
+
+- El ejecutable de GNU Make en MSYS2 se llama `mingw32-make`. Se usa igual:
+  `mingw32-make`, `mingw32-make top`.
+- El makefile invoca `python3`. En Windows ese nombre suele resolver al acceso
+  directo de la Microsoft Store, que no ejecuta nada y falla con
+  `Python was not found`. Hay que desactivar los alias `python3.exe` en
+  *Configuración → Aplicaciones → Alias de ejecución de aplicaciones*, o poner
+  primero en el `PATH` un directorio con un `python3.exe` real.
 
 ---
 
@@ -111,7 +132,7 @@ make solo-cifrar ARCHIVO=ruta  # solo el cifrado, verificado contra el modelo
 make solo-descifrar ORIGINAL=ruta  # descifra el .bin que dejo solo-cifrar
 make credencial # con la credencial equivocada no se cifra nada
 make ejemplos   # fibonacci, estadisticas y sesion_sin_logout, comprobados
-make sum        # el programa que compiló novac desde NOVA, en el RTL
+make sum        # suma_10_15.s, el programa de la validación con CE1108, en el RTL
 make correr PROG=fibonacci.s   # corre un programa y MUESTRA el resultado
 make asm        # ensambla feistel.s y corre el binario en el RTL
 make herramientas  # solo las pruebas de las herramientas en Python
@@ -157,6 +178,135 @@ de un segundo, así que un `.s` editado y su `.hex` ya existente pueden caer en
 el mismo segundo y `make` se salta el reensamblado. El resultado es una
 simulación que corre el binario anterior y falla sin motivo aparente. Ante
 cualquier resultado que no cuadre, `make clean && make`.
+
+### El ensamblador propio
+
+Un bundle por línea: cinco campos posicionales separados por `|`, en el orden
+S0 a S4, y terminados en `;`. El guión `-` es el NOP de ese slot, y los slots
+que se omiten a la derecha también quedan en NOP. La referencia completa está en
+la sección 10 de [`docs/isa.md`](docs/isa.md). Un fragmento de
+`tools/programas/fibonacci.s`, con cuatro unidades trabajando en el mismo
+bundle:
+
+```
+        .text
+        .org 0x0000
+
+inicio:
+        movi r1, #0      | movi r2, #1 ;
+        movi r3, #47     | movi r4, #0x100 ;
+        - ;
+        - ;
+
+lazo:
+        add r5, r1, r2   | subi r3, r3, #1 | sw r1, #0(r4) | add.s r4, #4 ;
+        - ;
+        - ;
+```
+
+Los dos `- ;` después de cada productor no son relleno: el hardware no detecta
+dependencias, así que quien escribe el programa espera los 3 bundles de latencia
+antes de leer el resultado.
+
+Se ensambla directamente, sin `make`:
+
+```bash
+python3 tools/cerbero_asm.py tools/programas/fibonacci.s \
+        -o fibonacci.hex --datos fibonacci_datos.hex --listado fibonacci.lst
+```
+
+```
+fibonacci.hex: 14 bundles
+fibonacci_datos.hex: 0 palabras
+```
+
+`fibonacci.hex` tiene una línea de 32 dígitos hexadecimales por bundle, lista
+para `$readmemh` en `imem.sv`:
+
+```
+E0800000E10000010000000000000000
+E180002FE20001000000000000000000
+```
+
+| Opción | Efecto |
+|---|---|
+| `-o` | Imagen de la memoria de instrucciones |
+| `--datos` | Imagen de la memoria de datos, con lo declarado en `.data` |
+| `--listado` | Listado con la dirección y la codificación de cada bundle junto a su línea fuente |
+| `--bundles N`, `--palabras N` | Rellena las imágenes hasta el tamaño de la memoria que las carga |
+| `--cobertura` | Informa qué mnemónicos del conjunto no usa el programa |
+
+Para correrlo y ver el resultado: `make correr PROG=fibonacci.s MOSTRAR=0x100 PALABRAS=47`.
+
+### La herramienta de carga, con distintos tipos de archivo
+
+`load_file.py` acepta cualquier archivo, porque lo trata como bytes. Estas son
+tres corridas reales con la interfaz literal del enunciado: un texto, una
+imagen PNG y un binario de 20 003 bytes.
+
+```bash
+python3 tools/load_file.py --input tools/programas/archivo_prueba.txt --output texto.mem  --address 0x4000
+python3 tools/load_file.py --input firma.png                          --output imagen.mem --address 0x4000
+python3 tools/load_file.py --input datos.bin                          --output binario.mem --address 0x4000
+```
+
+```
+tools/programas/archivo_prueba.txt: 23 bytes
+  base            0x00004000
+  zona usada      0x00004000 a 0x0000401f (32 bytes, cabecera incluida)
+  bloques de 64 b 3
+  relleno         1 byte(s) en cero
+
+firma.png: 45655 bytes
+  base            0x00004000
+  zona usada      0x00004000 a 0x0000f25f (45664 bytes, cabecera incluida)
+  bloques de 64 b 5707
+  relleno         1 byte(s) en cero
+
+datos.bin: 20003 bytes
+  base            0x00004000
+  zona usada      0x00004000 a 0x00008e2f (20016 bytes, cabecera incluida)
+  bloques de 64 b 2501
+  relleno         5 byte(s) en cero
+```
+
+Cada `.mem` trae las 16 384 palabras de los 64 KB de DMEM. Los primeros 8 bytes
+del buffer son una cabecera con el tamaño original, así que los datos empiezan
+en `base + 8`. Para sacar un archivo de un volcado de memoria:
+
+```bash
+python3 tools/extract_data.py --memory imagen.mem --address 0x4008 --size 45655 --output recuperada.png
+cmp firma.png recuperada.png && echo IGUAL
+```
+
+**Cifrar y descifrar la imagen en el procesador.** `make cifrar` hace la
+cadena completa: carga el archivo, un procesador lo cifra y otro lo descifra.
+Después compara el resultado con el original, y comprueba el criptograma contra
+el modelo de referencia en Python:
+
+```bash
+cd src/build
+make cifrar ARCHIVO=../../firma.png
+```
+
+```
+[5] el archivo volvio
+  ok     cabecera y datos iguales al original
+[6] aislamiento de la boveda
+  ok     ninguna subllave aparece en los 64 KB de datos
+casos: 13   fallidos: 0
+...
+  ok     el modelo de referencia descifra lo que cifro el hardware
+  ok     y cifra bloque por bloque lo mismo que el hardware
+  criptograma  45656 bytes en 5707 bloques, sin la cabecera:
+    00000000  8199d587 e4d5645e 644c8cd6 6949837c
+casos: 7   fallidos: 0
+RESULTADO: OK
+```
+
+El tamaño máximo es 49 144 bytes, lo que cabe entre `0x4008` y el final de la
+memoria de datos. Un archivo más grande es un error de `load_file.py`, no un
+desborde silencioso.
 
 ### Cifrar un archivo con una llave dada
 
@@ -254,7 +404,7 @@ cabecera, los datos de un archivo cargado en `0x4000` empiezan en `0x4008`.
 | `cifrado` | 13 | **Un archivo cualquiera**: `make cifrar ARCHIVO=...` sobre un archivo y una llave dados en la línea de comandos, con `probar_flujo.py` de oráculo en vez de valores fijos |
 | `credencial` | 7 | **La credencial equivocada**: el `LOGIN` no coincide, `AUTHFAIL` se enciende, las rondas se anulan con `DENIED` y el archivo queda sin cifrar |
 | `ejemplos` | 23 | **Los programas de demostración, comprobados**: `fibonacci.s` contra la sucesión que el testbench calcula por su cuenta, los seis resultados de `estadisticas.s` (que llama a `__div32` con enlace y retorno) y las tres fotos del PSW de `sesion_sin_logout.s` |
-| `sum` | 3 | **El compilador de CE1108**: el programa que produjo `novac` desde NOVA, corriendo en este procesador. Es el punto de contacto entre los dos cursos |
+| `sum` | 3 | **La validación con CE1108**: `suma_10_15.s`, ensamblado con `cerbero_asm.py` y corriendo en este procesador. El origen del programa y la evidencia de la validación conjunta están en [`docs/compiler-integration.md`](docs/compiler-integration.md) |
 | **Total** | **1748** | |
 
 A eso se suman **151 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
@@ -274,7 +424,7 @@ cosa parecida.
 
 ### Autoprueba del arnés
 
-Un testbench que siempre pasa no prueba nada. Los veinticuatro aceptan `-DFORCE_FAIL`,
+Un testbench que siempre pasa no prueba nada. Los veintiocho aceptan `-DFORCE_FAIL`,
 que inyecta un caso deliberadamente incorrecto para comprobar que el arnés sabe
 reportar una falla:
 
@@ -289,20 +439,26 @@ vvp -n /tmp/f.vvp ; echo "codigo de salida: $?"     # debe ser distinto de 0
 ## Estructura
 
 ```
-cerbero/
+VLIW-encryption-ISA/
+├── README.md
 ├── docs/
-│   └── isa.md                   Especificación del ISA (contrato con CE1108)
+│   ├── isa.md                   Especificación del ISA (contrato con CE1108)
+│   ├── microarchitecture.md     Diagrama de bloques y organización interna
+│   ├── simulation.md            Modelo de simulación
+│   └── compiler-integration.md  Contrato con CE1108 y validación conjunta
 ├── tools/
 │   ├── cerbero_asm.py           Ensamblador propio
 │   ├── probar_asm.py            Sus pruebas, 71 casos
 │   ├── load_file.py             Archivo a imagen de DMEM
 │   ├── extract_data.py          Volcado de DMEM a archivo
 │   ├── formato_buffer.py        El formato que comparten las dos
-│   ├── probar_archivos.py       Sus pruebas, 53 casos
+│   ├── probar_archivos.py       Sus pruebas, 54 casos
 │   ├── llave.py                 La llave desde la línea de comandos
 │   ├── probar_llave.py          Sus pruebas, 19 casos
 │   ├── probar_flujo.py          El flujo completo contra el modelo de referencia
 │   ├── probar_descifrado.py     El descifrado del hardware contra el modelo
+│   ├── novac_image.py           Ejecutable NOVA a imágenes de memoria
+│   ├── listado_a_texto.py       El texto de cada bundle, para la traza de make correr
 │   └── programas/
 │       ├── feistel.s            Cifrado de un bloque con sesión de bóveda
 │       ├── cifrar_archivo.s     Cifra un archivo completo, bloque por bloque
@@ -316,6 +472,7 @@ cerbero/
 │       ├── lazo_estres.s        100 000 vueltas con los cinco slots ocupados
 │       ├── div32.s              Subrutina de división sin signo
 │       ├── div32_prueba.s       Seis pares para probarla
+│       ├── suma_10_15.s         El programa de la validación con CE1108
 │       └── cobertura.s          Usa el 100% del conjunto de instrucciones
 └── src/
     ├── build/
@@ -355,10 +512,8 @@ cerbero/
         ├── tb_credencial.sv     Con la credencial equivocada no se cifra nada
         ├── tb_descifrado.sv     Descifra un .bin de disco (manual)
         ├── tb_ejemplos.sv       Los programas de demostración, comprobados
+        ├── tb_sum.sv            El programa de la validación con CE1108
         ├── tb_programa.sv       Ejecutor con traza del pipeline (no verifica)
-        ├── tb_cifrado.sv        Lo mismo sobre un archivo cualquiera
-        ├── tb_credencial.sv     Con la credencial equivocada no se cifra nada
-        ├── tb_descifrado.sv     Descifrar un archivo cifrado que viene de disco
         ├── imem_init.hex        Programa de ejemplo para tb_imem
         └── dmem_init.hex        Datos de ejemplo para tb_dmem
 ```
@@ -385,148 +540,3 @@ El `makefile` descubre las unidades por patrón, así que no hay que tocarlo:
 
 Para un testbench de integración, que no tiene un `cpu/<nombre>.sv` detrás,
 agregar el nombre a `NO_RTL`.
-
----
-
-## Convenciones
-
-- **Interfaz uniforme.** Las unidades de S2 a S4 reciben el slot crudo, publican
-  los índices de registro que necesitan y reciben los valores de vuelta. La etapa
-  de decodificación es un rebanado de bits y cinco instancias, sin un camino
-  especial para ninguna.
-- **Anular y marcar.** Una falla anula la operación de su slot y deja la causa en
-  el PSW. El pipeline no se detiene ni se vacía. La operación nula nunca falla,
-  ni siquiera por los campos que no usa.
-- **Cada falla se detecta en un solo sitio.** `ILLOP`, `MISALIGN`, `RANGE`,
-  `DENIED` y `NOKEY` los detecta la unidad que ejecuta la operación, porque de
-  todas formas necesita saberlo para anular su propio resultado; `psw_fault_unit`
-  las recibe y resuelve la prioridad entre slots. `WCONF` es la excepción: no
-  pertenece a ninguna unidad, así que lo detecta el PSW a partir de los
-  habilitadores de escritura reales. La etapa ID no detecta ninguna de las dos
-  cosas, y la cabecera de `dispatch.sv` explica por qué: `ILLOP` sería una
-  segunda copia de la tabla de campos reservados, y `WCONF` allí es imposible
-  porque depende de si cada slot escribe de verdad, que se resuelve en EX.
-- **Combinacional.** Ninguna unidad funcional registra su resultado, salvo la
-  bóveda, que tiene estado propio. El reparto por etapas vive en el datapath,
-  que es quien debe respetar la latencia de 3 bundles. Las memorias y el banco
-  de registros sí son secuenciales, por definición.
-- **Dos convenciones de flanco, a propósito.** El banco de registros escribe en
-  el flanco positivo y lee en el negativo, de modo que una lectura ve la
-  escritura del mismo ciclo: es lo que sostiene la latencia de 3 bundles, y
-  `make latency` lo mide en vez de darlo por supuesto. Las memorias van al
-  revés, lectura en el positivo y escritura en el negativo, así que una lectura
-  no ve la escritura de su propio ciclo y lectura y escritura no coinciden nunca
-  en el mismo instante. Está documentado en la cabecera de los tres módulos
-  porque dos convenciones opuestas en el mismo diseño son justo lo que alguien
-  "corrige" sin darse cuenta.
-- **Los registros de salida de las memorias son registros de segmentación.** El
-  de `imem` es IF/ID y el de `dmem` es EX/MEM, así que no se les pone otro
-  registro encima. La consecuencia práctica es que el contador de programa y la
-  LSU tienen que presentar sus direcciones de forma **combinacional** durante su
-  etapa: si llegaran ya registradas, el pipeline entero correría un ciclo y la
-  latencia de la carga pasaría de 3 a 4 bundles.
-- **Son tres registros de segmentación, no cuatro.** No hay `reg_mem_wb`: el
-  banco de registros escribe en el flanco que abre WB, así que sus entradas
-  tienen que estar estables durante MEM, que es donde las deja `reg_ex_mem`. Los
-  biestables del banco y los del PSW *son* la frontera MEM/WB. Un registro más
-  delante del banco correría la escritura al ciclo n+5 y la latencia expuesta
-  pasaría a 4 bundles; `make pipeline` lo mide sobre la cadena real.
-- **No hay lógica de vaciado en ninguna frontera.** La BRU resuelve el salto en
-  decodificación, así que el bundle que entra detrás es el delay slot, que el
-  ISA ejecuta siempre, y el destino entra justo después. Nunca se busca un
-  bundle que haya que descartar. Eso es lo que se compra resolviendo en ID en
-  vez de en EX: resolver en EX exigiría dos delay slots, o uno más lógica de
-  vaciado en las tres fronteras.
-- **`HALT` también tiene delay slot.** El ISA no decía si `HALT` cuenta como
-  salto; cuenta. El bundle siguiente ya se está buscando cuando la BRU ve
-  `HALT`, así que se ejecuta, y desde ese flanco el PC queda congelado y `valid`
-  en cero. Los bundles en vuelo terminan normalmente; esperar a que el pipeline
-  se vacíe antes de terminar la simulación le toca a quien observa `halted`.
-  Sólo el reset sale de ese estado.
-- **El PC siempre es múltiplo de 16.** `JR` y `JALR` saltan a `R[rs]` tal cual,
-  así que `fetch.sv` borra los cuatro bits bajos del destino. `imem` los ignora
-  de todas formas, pero sin el borrado la BRU vería un PC distinto del bundle
-  que de verdad se buscó, y el enlace de `JAL` y la comparación de región segura
-  de la bóveda saldrían corridos.
-- **Nada de saltos en el delay slot.** Si el delay slot trae otro salto, los dos
-  surten efecto encadenados y el destino del primero acaba siendo el delay slot
-  del segundo: se ejecuta una vez y se abandona. Es definido y reproducible, y
-  `make fetch_flow` lo mide, pero no es lo que pretende quien genera el código,
-  así que la v1.2 del ISA lo prohíbe.
-- **Cuatro cosas son responsabilidad de `top.sv` y de ningún otro archivo**, porque
-  hacen falta dos o más unidades para verlas, y la cabecera de `top.sv` las
-  explica una por una: gatear la ALU con `valid`, porque `alu.sv` es la única
-  unidad funcional sin esa entrada; marcar `ILLOP` en el opcode `111` de S3, que
-  ninguna de las tres unidades del slot reclama; repartir los puertos de
-  escritura de S3 entre la ALU corta y la unidad de ronda; y sustituir el valor
-  del dato cargado en MEM, que no existe todavía en EX. Los cuatro tienen su
-  propio programa en `tb_top.sv`, y los cuatro se probaron con mutantes.
-- **La llave y la credencial se borran de los registros en el mismo bundle que
-  las usa.** `vault_sesion.s` arma la credencial en `R1`–`R4` y la llave en
-  `R5`–`R8`, y `KSETW` no borra nada: sin un borrado explícito las ocho palabras
-  siguen en el banco cuando el programa termina, **fuera** de la región segura,
-  a la vista de cualquier código que corra después. El borrado va en las dos ALU
-  de los mismos cuatro bundles que llevan los `KSETW`, así que no cuesta un solo
-  ciclo: todos los slots de un bundle leen el estado de registros previo al
-  bundle, de modo que cada `KSETW` toma su palabra antes de que el borrado surta
-  efecto — incluso en el cuarto, donde S1 escribe `R8` y S3 lo lee. La sección 7
-  de `tb_archivo` es la que obliga a que siga siendo así; sin ella el borrado se
-  puede quitar y la suite entera pasa igual.
-- **Un ejecutor no es un testbench.** `make correr` usa `tb_programa.sv`, que
-  muestra registros, memoria, la traza del pipeline y dónde se abre y se cierra
-  la sesión, pero **no compara nada**: su única condición de fracaso es que el
-  programa no llegue a `HALT`. Por eso no imprime `RESULTADO: OK` como los
-  demás, donde esa línea significa que pasaron todos los casos. Un programa que
-  calcula mal termina igual de bien y su salida se ve idéntica. Los programas
-  que sí están verificados contra valores esperados viven en `tb_ejemplos.sv`,
-  que entra en `make`.
-- **Todo el camino criptográfico vive dentro de la región segura.** No es una
-  recomendación: el cierre automático de sesión se evalúa en el mismo flanco en
-  que `LOGIN` fijaría `AUTH`, así que un `LOGIN` fuera de
-  `[SEC_BASE, SEC_LIMIT]` no falla, simplemente no abre sesión, y las rondas
-  posteriores se anulan con `DENIED`. Por eso los dos programas de archivo
-  ponen su lazo completo en `0x7000` y entran con `JALR`, y por eso el retorno
-  cierra la sesión por hardware. Lo único que puede quedar afuera es la
-  construcción de las constantes. Está en la sección 8.3 del ISA, en la cabecera
-  de `vault_sesion.s`, y `tb_archivo` lo comprueba.
-- **Los archivos de carga entran por macro, no por parámetro.** Icarus Verilog 12
-  no puede pasar un parámetro de tipo `string` de un módulo a un submódulo: falla
-  en elaboración con `Unable to bind variable`. Una macro se expande como literal
-  en el sitio de la instancia y no cruza ninguna frontera de módulo:
-  `make top IMEM=../tb/programa.hex DMEM=../tb/datos.hex`.
-- **Compilación limpia.** `iverilog -Wall` y `verilator --lint-only -Wall` sin
-  avisos. Conviene correr `make lint` antes de cada commit, no sólo cuando algo
-  falla: Verilator detecta anchos inconsistentes, señales no usadas y latches
-  inferidos que Icarus deja pasar.
-
----
-
-## Estado
-
-**Entrega 1** — Especificación del ISA. Entregada.
-**Entrega 2** — En curso.
-
-| Componente | Estado |
-|---|---|
-| Las siete unidades funcionales | Completas y verificadas |
-| Integración bóveda + ronda | Completa |
-| `regfile.sv` | Completo y verificado |
-| Memorias `imem.sv` y `dmem.sv` | Completas y verificadas |
-| `dispatch.sv` y `psw_fault_unit.sv` | Completos y verificados |
-| Registros de segmentación | Completos y verificados |
-| `fetch.sv` y contador de programa | Completo y verificado |
-| `top.sv` y su testbench | **Completo y verificado** |
-| Ensamblador propio | **Completo y verificado** |
-| `load_file.py` y `extract_data.py` | **Completos y verificados** |
-| Subrutina `__div32` | **Completa y verificada** |
-| Programa que cifra y descifra un archivo completo | **Completo y verificado** |
-| Registro de cambios para CE1108 | **Escrito**, en `docs/isa.md` §14 (v1.1 a v1.6) |
-
-**El código está completo.** Las diecisiete unidades, los tres registros de
-segmentación, el procesador completo, el ensamblador, las dos herramientas de
-archivo y los programas de prueba, con 1748 casos de testbench y 151 de las
-herramientas, todos pasando desde cero con `make clean && make lint && make`.
-
-Lo que queda del proyecto no es código: es el documento de la Entrega 2. El
-registro de cambios que CE1108 necesita ya está escrito como la sección 14 de
-`docs/isa.md`, así que entregarles este paquete cumple con esa comunicación.
