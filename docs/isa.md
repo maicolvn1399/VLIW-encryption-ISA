@@ -1045,6 +1045,8 @@ El formato del buffer, que producen `load_file.py` y `extract_data.py`:
 | `0x4004` | Cantidad de bloques de 64 bits |
 | `0x4008` | Los datos, little-endian, rellenados con ceros hasta un múltiplo de 8 bytes |
 
+> La v1.6 corrige cómo se saca el contenido de este buffer a un archivo: el relleno se quita para el texto en claro y **no** para el criptograma, que se guarda con su cabecera.
+
 La cantidad de bytes hace falta porque Feistel4 trabaja sobre bloques de 64 bits y casi ningún archivo mide un múltiplo exacto de 8: sin ese número, al extraer no habría forma de distinguir los ceros de relleno de los ceros que de verdad estaban en el archivo, y todo archivo que terminara en `0x00` saldría truncado. La cantidad de bloques la lee el programa que cifra para saber cuántas vueltas dar, y se deja calculada para no gastar una división en cada corrida.
 
 ### v1.5
@@ -1058,3 +1060,30 @@ Dónde tiene que vivir el código criptográfico. Es información nueva que sali
 | La construcción de las constantes (`MOVI` / `MOVH`) puede quedar afuera | Sección 8.3 | No, es una libertad |
 
 El detalle está en la sección 8.3, y los dos programas de `tools/programas/` que cifran y descifran un archivo son el ejemplo ejecutable: `cifrar_archivo.s` deja el prólogo en `0x0000` y entra con `JALR` a `0x7000`, donde viven el `LOGIN`, la instalación de la llave y el lazo. `tb_archivo.sv` comprueba la ida y la vuelta sobre un archivo real, y `tools/probar_flujo.py` descifra con un modelo de referencia en Python el criptograma que produjo el RTL.
+
+### v1.6
+
+Un criptograma no se puede recortar, y el archivo cifrado es un contenedor. Es una corrección del formato que fijó la v1.4, y salió de una pregunta del grupo de CE 1108 al probar con un archivo más grande que el de prueba.
+
+La v1.4 dice que la palabra de `0x4000` guarda la cantidad de bytes del archivo original, para poder quitar el relleno al extraer. Eso es correcto **para el texto en claro** y es un error para el criptograma: el criptograma del último bloque ocupa los 8 bytes enteros, relleno incluido, porque la ronda mezcla las dos mitades de 32 bits entre sí. Recortar el criptograma a la cantidad de bytes del original pierde hasta 7 bytes de ese bloque, y al descifrarlo sale basura. Los bloques anteriores salen bien, así que el síntoma es un archivo correcto con el final corrompido.
+
+La solución es guardar el criptograma con su cabecera, como un contenedor que se describe a sí mismo:
+
+| Bytes del archivo cifrado | Contenido |
+| :--- | :--- |
+| `0` a `3` | Cantidad de bytes del archivo original, little-endian |
+| `4` a `7` | Cantidad de bloques de 64 bits, little-endian |
+| `8` en adelante | Los bloques completos, 8 bytes cada uno |
+
+La cabecera no se cifra, así que viaja legible y el descifrado recupera el tamaño original sin tener que acordarse de él por fuera.
+
+| Cambio | Alcance | ¿Afecta al emisor de binario? |
+| :--- | :--- | :---: |
+| Un criptograma sacado a un archivo ocupa `8 × bloques` bytes, no `bytes` | Herramientas | No |
+| El archivo cifrado lleva los 8 bytes de cabecera por delante | Herramientas | No |
+| `extract_data.py --cifrado` lo escribe y `load_file.py --cifrado` lo vuelve a cargar | Herramientas | No |
+| Un criptograma cifrado **fuera** del proyecto no trae cabecera: entra con `--crudo` y sale con el relleno del último bloque | Herramientas | No |
+
+**No cambia nada del hardware ni del código generado.** El buffer en memoria sigue siendo exactamente el de la v1.4 — `0x4000` los bytes, `0x4004` los bloques, `0x4008` los datos — y los dos programas de archivo nunca lo recortaron. Lo que estaba mal era la extracción a un archivo, que es cosa de las herramientas.
+
+Vale la pena anotar por qué no se había visto. El archivo de prueba del proyecto mide 23 bytes y la última palabra de su criptograma es `0x00F0DEDC`, cuyo byte alto es `0x00`, el mismo que habría puesto el relleno. La ida y vuelta cuadraba por coincidencia. `probar_archivos.py` tiene ahora una sección que fuerza la condición a propósito, con un último bloque cuyo relleno cifrado no es cero.

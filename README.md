@@ -59,11 +59,14 @@ reenvía resultados y no se detiene nunca.
 | Su arnés de pruebas, 53 casos | `tools/probar_archivos.py` |
 | La llave desde la línea de comandos, y sus 19 casos | `tools/llave.py`, `tools/probar_llave.py` |
 | El flujo completo contra un modelo de referencia, 7 casos | `tools/probar_flujo.py` |
+| Ejecutable NOVA a imágenes de memoria (puente con CE1108) | `tools/novac_image.py` |
 | Programa de cifrado Feistel4 de un bloque | `tools/programas/feistel.s` |
 | **Cifra un archivo completo** | `tools/programas/cifrar_archivo.s` |
 | **Lo descifra** | `tools/programas/descifrar_archivo.s` |
 | Prólogo compartido: credencial, llave y cabecera | `tools/programas/cargar_llave.s` |
 | Prólogo compartido: sesión de bóveda e instalación | `tools/programas/vault_sesion.s` |
+| Programas de demostración, comprobados en `make` | `tools/programas/fibonacci.s`, `estadisticas.s`, `sesion_sin_logout.s` |
+| Lazo de 100 000 vueltas, a mano | `tools/programas/lazo_estres.s` |
 | Subrutina de división de 32 bits | `tools/programas/div32.s` |
 | Programa que usa el 100% del conjunto | `tools/programas/cobertura.s` |
 
@@ -98,7 +101,7 @@ Todo se corre desde `src/build`:
 ```bash
 cd src/build
 
-make            # pruebas de las herramientas, los veintiséis testbenches y el flujo
+make            # pruebas de las herramientas, los veintiocho testbenches y el flujo
 make lint       # análisis estático de las diecisiete unidades
 make top        # corre los siete programas sobre el procesador completo
 make archivo    # cifra y descifra un archivo completo sobre el RTL
@@ -107,6 +110,9 @@ make cifrar ARCHIVO=ruta  # lo mismo, sobre un archivo cualquiera
 make solo-cifrar ARCHIVO=ruta  # solo el cifrado, verificado contra el modelo
 make solo-descifrar ORIGINAL=ruta  # descifra el .bin que dejo solo-cifrar
 make credencial # con la credencial equivocada no se cifra nada
+make ejemplos   # fibonacci, estadisticas y sesion_sin_logout, comprobados
+make sum        # el programa que compiló novac desde NOVA, en el RTL
+make correr PROG=fibonacci.s   # corre un programa y MUESTRA el resultado
 make asm        # ensambla feistel.s y corre el binario en el RTL
 make herramientas  # solo las pruebas de las herramientas en Python
 make div        # corre la subrutina de división en el procesador
@@ -244,15 +250,19 @@ cabecera, los datos de un archivo cargado en `0x4000` empiezan en `0x4008`.
 | `top` | 45 | **El procesador completo** corriendo siete programas: aritmética con la latencia de 3 bundles, memoria en los tres tamaños con y sin signo, llamada y retorno, **cifrado Feistel4 completo** contra valores calculados fuera del simulador, la misma rutina denegada fuera de la región segura, `ILLOP` y `MISALIGN`, y que nada se ejecute después de `HALT` |
 | `asm` | 12 | **La cadena completa**: el binario que produce `cerbero_asm.py` desde `feistel.s`, corriendo en el RTL, cifrando bien y con el cierre automático de sesión al salir de la región segura |
 | `div` | 15 | **La subrutina de división** corriendo en el procesador: seis pares, con divisor cero y con el bit 31 encendido |
-| `archivo` | 27 | **La cadena completa sobre un archivo real**: dos procesadores, uno cifra y el otro descifra lo que el primero dejó en memoria; criptograma contra valores calculados fuera del simulador, el archivo recuperado byte por byte, la cabecera intacta, y un barrido de los 64 KB de las dos memorias buscando subllaves filtradas |
-| **Total** | **1700** | |
+| `archivo` | 29 | **La cadena completa sobre un archivo real**: dos procesadores, uno cifra y el otro descifra lo que el primero dejó en memoria; criptograma contra valores calculados fuera del simulador, el archivo recuperado byte por byte, la cabecera intacta, un barrido de los 64 KB de las dos memorias buscando subllaves filtradas, y que ni la llave ni la credencial queden en el banco de registros |
+| `cifrado` | 13 | **Un archivo cualquiera**: `make cifrar ARCHIVO=...` sobre un archivo y una llave dados en la línea de comandos, con `probar_flujo.py` de oráculo en vez de valores fijos |
+| `credencial` | 7 | **La credencial equivocada**: el `LOGIN` no coincide, `AUTHFAIL` se enciende, las rondas se anulan con `DENIED` y el archivo queda sin cifrar |
+| `ejemplos` | 23 | **Los programas de demostración, comprobados**: `fibonacci.s` contra la sucesión que el testbench calcula por su cuenta, los seis resultados de `estadisticas.s` (que llama a `__div32` con enlace y retorno) y las tres fotos del PSW de `sesion_sin_logout.s` |
+| `sum` | 3 | **El compilador de CE1108**: el programa que produjo `novac` desde NOVA, corriendo en este procesador. Es el punto de contacto entre los dos cursos |
+| **Total** | **1748** | |
 
-A eso se suman **150 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
+A eso se suman **151 casos** de las herramientas en Python, que `make` corre antes y después de los testbenches:
 
 | | |
 |---|---|
 | `probar_asm.py` | 71 casos: la codificación contra valores calculados a mano, las ocho validaciones que el ISA 10.3 manda rechazar, los rangos de cada operando, qué es advertencia y qué es error, y que los 63 mnemónicos del conjunto estén cubiertos |
-| `probar_archivos.py` | 53 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, el contenedor del archivo cifrado, la interfaz del enunciado y el criptograma crudo |
+| `probar_archivos.py` | 54 casos: ida y vuelta con los tamaños que rompen las cosas (vacío, un byte, exactamente un bloque, y sobre todo un archivo que **termina en cero**), la disposición del buffer contra palabras escritas a mano, lo que debe fallar, el contenedor del archivo cifrado, la interfaz del enunciado y el criptograma crudo |
 | `probar_llave.py` | 19 casos: el orden de `key[0..3]` en las dos formas de escribir la llave, contra valores escritos a mano, y que el programa generado la arme en `r5` a `r8` |
 | `probar_flujo.py` | 7 casos: toma el volcado de `$writememh` que dejó `tb_archivo` o `tb_cifrado`, lo convierte en contenedor cifrado con `extract_data.py --cifrado` y lo descifra con un **modelo de referencia escrito sólo desde la fórmula del enunciado**, que no comparte una línea con el RTL ni con el ensamblador |
 
@@ -300,6 +310,10 @@ cerbero/
 │       ├── cargar_llave.s       Prólogo incluido por los dos: constantes
 │       ├── vault_sesion.s       Prólogo incluido por los dos: sesión y llave
 │       ├── archivo_prueba.txt   El archivo de 23 bytes que se cifra
+│       ├── fibonacci.s          F(0) a F(46), aritmética encadenada
+│       ├── estadisticas.s       Suma, máximo, mínimo y promedio con __div32
+│       ├── sesion_sin_logout.s  El cierre automático de sesión, visto por el programa
+│       ├── lazo_estres.s        100 000 vueltas con los cinco slots ocupados
 │       ├── div32.s              Subrutina de división sin signo
 │       ├── div32_prueba.s       Seis pares para probarla
 │       └── cobertura.s          Usa el 100% del conjunto de instrucciones
@@ -337,6 +351,11 @@ cerbero/
         ├── tb_asm.sv            El binario del ensamblador sobre el RTL
         ├── tb_div.sv            La subrutina de división sobre el RTL
         ├── tb_archivo.sv        Cifrado y descifrado de un archivo completo
+        ├── tb_cifrado.sv        Lo mismo sobre un archivo y una llave cualesquiera
+        ├── tb_credencial.sv     Con la credencial equivocada no se cifra nada
+        ├── tb_descifrado.sv     Descifra un .bin de disco (manual)
+        ├── tb_ejemplos.sv       Los programas de demostración, comprobados
+        ├── tb_programa.sv       Ejecutor con traza del pipeline (no verifica)
         ├── tb_cifrado.sv        Lo mismo sobre un archivo cualquiera
         ├── tb_credencial.sv     Con la credencial equivocada no se cifra nada
         ├── tb_descifrado.sv     Descifrar un archivo cifrado que viene de disco
@@ -442,6 +461,25 @@ agregar el nombre a `NO_RTL`.
   escritura de S3 entre la ALU corta y la unidad de ronda; y sustituir el valor
   del dato cargado en MEM, que no existe todavía en EX. Los cuatro tienen su
   propio programa en `tb_top.sv`, y los cuatro se probaron con mutantes.
+- **La llave y la credencial se borran de los registros en el mismo bundle que
+  las usa.** `vault_sesion.s` arma la credencial en `R1`–`R4` y la llave en
+  `R5`–`R8`, y `KSETW` no borra nada: sin un borrado explícito las ocho palabras
+  siguen en el banco cuando el programa termina, **fuera** de la región segura,
+  a la vista de cualquier código que corra después. El borrado va en las dos ALU
+  de los mismos cuatro bundles que llevan los `KSETW`, así que no cuesta un solo
+  ciclo: todos los slots de un bundle leen el estado de registros previo al
+  bundle, de modo que cada `KSETW` toma su palabra antes de que el borrado surta
+  efecto — incluso en el cuarto, donde S1 escribe `R8` y S3 lo lee. La sección 7
+  de `tb_archivo` es la que obliga a que siga siendo así; sin ella el borrado se
+  puede quitar y la suite entera pasa igual.
+- **Un ejecutor no es un testbench.** `make correr` usa `tb_programa.sv`, que
+  muestra registros, memoria, la traza del pipeline y dónde se abre y se cierra
+  la sesión, pero **no compara nada**: su única condición de fracaso es que el
+  programa no llegue a `HALT`. Por eso no imprime `RESULTADO: OK` como los
+  demás, donde esa línea significa que pasaron todos los casos. Un programa que
+  calcula mal termina igual de bien y su salida se ve idéntica. Los programas
+  que sí están verificados contra valores esperados viven en `tb_ejemplos.sv`,
+  que entra en `make`.
 - **Todo el camino criptográfico vive dentro de la región segura.** No es una
   recomendación: el cierre automático de sesión se evalúa en el mismo flanco en
   que `LOGIN` fijaría `AUTH`, así que un `LOGIN` fuera de
@@ -482,11 +520,11 @@ agregar el nombre a `NO_RTL`.
 | `load_file.py` y `extract_data.py` | **Completos y verificados** |
 | Subrutina `__div32` | **Completa y verificada** |
 | Programa que cifra y descifra un archivo completo | **Completo y verificado** |
-| Registro de cambios para CE1108 | **Escrito**, en `docs/isa.md` §14 (v1.1 a v1.5) |
+| Registro de cambios para CE1108 | **Escrito**, en `docs/isa.md` §14 (v1.1 a v1.6) |
 
 **El código está completo.** Las diecisiete unidades, los tres registros de
 segmentación, el procesador completo, el ensamblador, las dos herramientas de
-archivo y los programas de prueba, con 1700 casos de testbench y 107 de las
+archivo y los programas de prueba, con 1748 casos de testbench y 151 de las
 herramientas, todos pasando desde cero con `make clean && make lint && make`.
 
 Lo que queda del proyecto no es código: es el documento de la Entrega 2. El

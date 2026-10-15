@@ -25,6 +25,23 @@
 //     python3 ../../tools/extract_data.py salida.hex -o cifrado.bin --cifrado
 //
 // -----------------------------------------------------------------------------
+// ES UN EJECUTOR, NO UN TESTBENCH
+// -----------------------------------------------------------------------------
+// Conviene tenerlo claro antes de leer su salida: esto muestra lo que el
+// procesador dejo, y no lo compara con nada. No tiene valores esperados, no
+// cuenta casos y su unica condicion de fracaso es que el programa no llegue a
+// HALT. Un programa que calcula mal termina igual de bien y se ve igual.
+//
+// Por eso no imprime "RESULTADO: OK" al final, aunque todos los demas
+// testbenches del proyecto lo hagan: ahi esa linea significa que pasaron todos
+// los casos, y aqui no hay ninguno. Dice "TERMINO" y lo aclara.
+//
+// Para que un programa quede verificado va a tb_ejemplos.sv, que lo corre y
+// compara lo que deja contra valores calculados fuera del simulador. Este de
+// aqui es para mirar: entender una latencia, ver donde se abre y se cierra la
+// sesion de la boveda, o sacar la traza del pipeline para el documento.
+//
+// -----------------------------------------------------------------------------
 // QUE MUESTRA
 // -----------------------------------------------------------------------------
 //   - Mientras corre: cada vez que cambia el bit AUTH del PSW (con el bundle
@@ -46,13 +63,6 @@
 //   +DATOS=archivo.hex      memoria de datos inicial (opcional)
 //   +VOLCADO=archivo.hex    donde guardar la memoria de datos al terminar
 //                           (opcional), en el formato de $writememh
-//   +RESULTADO=archivo.txt  donde guardar el resumen final: ciclos, registros,
-//                           PSW y la memoria pedida con MOSTRAR (opcional)
-//   +FUENTE=programa.s      nombre del programa, para el encabezado de ese
-//                           archivo (opcional)
-//   +ESCRITURAS=archivo.txt cada escritura a registros y a memoria de toda
-//                           la corrida, con su ciclo y su bundle (opcional)
-//   +ESCRITURAS_MAX=n       tope de lineas de ese archivo (50 000)
 //   +CICLOS=n               tope de ciclos antes de declarar que no termino
 //   +MOSTRAR=n              direccion de byte desde donde mostrar la memoria
 //   +PALABRAS=n             cuantas palabras de 32 bits mostrar
@@ -112,10 +122,7 @@ module tb_programa;
   // ---------------------------------------------------------------------------
   // Contadores
   //
-  // El ciclo 1 es el que empieza al soltar el reset: en el, fetch presenta la
-  // primera direccion a la memoria de instrucciones, o sea que es el IF del
-  // primer bundle. Cada flanco de subida despues de ese abre el ciclo
-  // siguiente.
+  // El ciclo 1 es el primero despues de soltar el reset.
   // ---------------------------------------------------------------------------
 
   integer ciclo              = 0;
@@ -345,29 +352,6 @@ module tb_programa;
 
   integer puerto, indice_registro;
   string  escrituras, causa_de_cierre;
-
-  // Registro de escrituras: cada escritura a un registro (en WB) y a la
-  // memoria de datos, de toda la corrida, en un archivo aparte
-  integer canal_escrituras  = 0;
-  integer lineas_escritas   = 0;
-  integer tope_de_lineas    = 50000;
-  task automatic anotar_escritura(input integer c, input logic [`XLEN-1:0] pc,
-                                  input string que);
-    if (canal_escrituras != 0) begin
-      // Sin el texto del programa (con HEX=), va el bundle en hexadecimal
-      if (lineas_escritas < tope_de_lineas && texto_del_bundle_en(pc) != "")
-        $fdisplay(canal_escrituras, "  %7d  %05h  %-58s  // %s",
-                  c, pc[19:0], que, texto_del_bundle_en(pc));
-      else if (lineas_escritas < tope_de_lineas)
-        $fdisplay(canal_escrituras, "  %7d  %05h  %-58s  // bundle %032h",
-                  c, pc[19:0], que, dut.u_imem.storage[pc[`XLEN-1:4]]);
-      else if (lineas_escritas == tope_de_lineas)
-        $fdisplay(canal_escrituras,
-                  "  ... se llego al tope de %0d lineas; ESCRITURAS_MAX= lo cambia",
-                  tope_de_lineas);
-      lineas_escritas = lineas_escritas + 1;
-    end
-  endtask
   logic [3:0] banderas;
 
   always @(negedge clk) begin
@@ -405,12 +389,6 @@ module tb_programa;
       // ---- escritura a memoria, desde EX ---------------------------------------
       if (dut.lsu_mem_we) begin
         if (dut.lsu_be == 4'b1111)
-          anotar_escritura(ciclo, dut.ex_pc, $sformatf("MEM  [%05h] <- %08h",
-                           dut.lsu_eff_addr[19:0], dut.lsu_wdata));
-        else
-          anotar_escritura(ciclo, dut.ex_pc, $sformatf("MEM  [%05h] <- %08h  bytes %b",
-                           dut.lsu_eff_addr[19:0], dut.lsu_wdata, dut.lsu_be));
-        if (dut.lsu_be == 4'b1111)
           agregar_evento(ciclo, $sformatf("MEM     [%05h] <- %08h   (bundle %05h)",
               dut.lsu_eff_addr[19:0], dut.lsu_wdata, dut.ex_pc[19:0]));
         else
@@ -425,8 +403,6 @@ module tb_programa;
         if (dut.wb_wen[puerto])
           escrituras = {escrituras, $sformatf("r%0d <- %08h   ",
                         dut.wb_widx[puerto], dut.wb_wval[puerto])};
-      if (escrituras != "" && ex_tenia_bundle)
-        anotar_escritura(ciclo + 1, pc_ex_del_ciclo_anterior, {"REG  ", escrituras});
       if (escrituras != "" && ex_tenia_bundle)
         agregar_evento(ciclo + 1, $sformatf("REG     %s(bundle %05h)",
                        escrituras, pc_ex_del_ciclo_anterior[19:0]));
@@ -488,14 +464,6 @@ module tb_programa;
   // ---------------------------------------------------------------------------
 
   string  archivo_programa, archivo_datos, archivo_volcado, archivo_texto;
-  string  archivo_resultado, archivo_fuente, archivo_escrituras;
-
-  // Copia de la memoria de datos al arrancar, para saber al final que palabras
-  // cambio el programa
-  localparam int MAXIMO_CAMBIOS_EN_PANTALLA = 64;
-  logic [`XLEN-1:0] memoria_inicial [0:CANTIDAD_PALABRAS-1];
-  integer cambios, primer_cambio, ultimo_cambio, mostrados;
-  integer salida, canal_archivo = 0;
   string  pedido_de_traza;
 
   // +TRAZA=n es la ventana 1 a n; +TRAZA=a-b, la ventana a a b
@@ -531,30 +499,6 @@ module tb_programa;
     end
     if (!$value$plusargs("DATOS=%s", archivo_datos)) archivo_datos = "";
     if (!$value$plusargs("VOLCADO=%s", archivo_volcado)) archivo_volcado = "";
-    if (!$value$plusargs("RESULTADO=%s", archivo_resultado)) archivo_resultado = "";
-    if (!$value$plusargs("FUENTE=%s", archivo_fuente)) archivo_fuente = "";
-    if (!$value$plusargs("ESCRITURAS=%s", archivo_escrituras)) archivo_escrituras = "";
-    if (!$value$plusargs("ESCRITURAS_MAX=%d", tope_de_lineas)) tope_de_lineas = 50000;
-    if (archivo_escrituras != "") begin
-      canal_escrituras = $fopen(archivo_escrituras, "w");
-      if (canal_escrituras == 0)
-        $display("    (no se pudo abrir %s)", archivo_escrituras);
-      else begin
-        if (archivo_fuente != "")
-          $fdisplay(canal_escrituras, "=== escrituras de %s ===", archivo_fuente);
-        else
-          $fdisplay(canal_escrituras, "=== escrituras de %s ===", archivo_programa);
-        $fdisplay(canal_escrituras, "");
-        $fdisplay(canal_escrituras,
-                  "  REG: lo que el banco de registros guardo en WB.");
-        $fdisplay(canal_escrituras,
-                  "  MEM: lo que la LSU escribio en la memoria de datos.");
-        $fdisplay(canal_escrituras,
-                  "  El bundle es el que hizo la escritura; al final de la linea va su texto.");
-        $fdisplay(canal_escrituras, "");
-        $fdisplay(canal_escrituras, "    ciclo  bundle escritura");
-      end
-    end
     if (!$value$plusargs("CICLOS=%d", tope_ciclos))  tope_ciclos = 2000000;
     if (!$value$plusargs("MOSTRAR=%d", mostrar_desde)) mostrar_desde = 0;
     if (!$value$plusargs("PALABRAS=%d", palabras_a_mostrar)) palabras_a_mostrar = 0;
@@ -570,8 +514,6 @@ module tb_programa;
     #1;
     $readmemh(archivo_programa, dut.u_imem.storage);
     if (archivo_datos != "") $readmemh(archivo_datos, dut.u_dmem.storage);
-    for (i = 0; i < CANTIDAD_PALABRAS; i = i + 1)
-      memoria_inicial[i] = dut.u_dmem.storage[i];
 
     $display("=== tb_programa: %s ===", archivo_programa);
     if (archivo_datos != "")
@@ -580,7 +522,6 @@ module tb_programa;
 
     repeat (3) @(posedge clk);
     #1 rst_n = 1'b1;
-    ciclo = 1;
 
     while (!detenido && ciclo < tope_ciclos) @(posedge clk);
     // Que terminen los bundles que ya estaban dentro del pipeline
@@ -591,110 +532,46 @@ module tb_programa;
       imprimir_traza(ciclo);
 
     // ------------------------------------------------------------------------
-    // El resumen final va a la pantalla y, con +RESULTADO=, tambien a un
-    // archivo. Un descriptor multicanal escribe en los dos a la vez: el canal
-    // 1 es la salida estandar y $fopen sin modo devuelve otro canal.
-    salida = 1;
-    if (archivo_resultado != "") begin
-      canal_archivo = $fopen(archivo_resultado);
-      if (canal_archivo == 0)
-        $display("    (no se pudo abrir %s)", archivo_resultado);
-      else begin
-        salida = salida | canal_archivo;
-        // Icarus 12 no acepta ?: entre cadenas, de ahi el if
-        if (archivo_fuente != "")
-          $fdisplay(canal_archivo, "=== resultado de %s ===", archivo_fuente);
-        else
-          $fdisplay(canal_archivo, "=== resultado de %s ===", archivo_programa);
-      end
-    end
-
-    // ------------------------------------------------------------------------
-    $fdisplay(salida, "");
+    $display("");
     if (detenido)
-      $fdisplay(salida, "  el programa llego a HALT en %0d ciclos, %0d bundles ejecutados",
+      $display("  el programa llego a HALT en %0d ciclos, %0d bundles ejecutados",
                ciclo, bundles_ejecutados);
     else
-      $fdisplay(salida, "  el programa NO llego a HALT en %0d ciclos", tope_ciclos);
+      $display("  el programa NO llego a HALT en %0d ciclos", tope_ciclos);
 
     // ------------------------------------------------------------------------
-    $fdisplay(salida, "");
-    $fdisplay(salida, "  registros");
+    $display("");
+    $display("  registros");
     for (i = 0; i < `NREGS; i = i + 2)
-      $fdisplay(salida, "    r%-2d = %08h  %11d        r%-2d = %08h  %11d",
+      $display("    r%-2d = %08h  %11d        r%-2d = %08h  %11d",
                i,     registros[i],     $signed(registros[i]),
                i + 1, registros[i + 1], $signed(registros[i + 1]));
 
     // ------------------------------------------------------------------------
-    $fdisplay(salida, "");
-    $fdisplay(salida, "  PSW = %08h", psw);
-    $fdisplay(salida, "    banderas  Z=%0d N=%0d C=%0d V=%0d",
+    $display("");
+    $display("  PSW = %08h", psw);
+    $display("    banderas  Z=%0d N=%0d C=%0d V=%0d",
              psw[`PSW_Z], psw[`PSW_N], psw[`PSW_C], psw[`PSW_V]);
-    $fdisplay(salida, "    boveda    AUTH=%0d AUTHFAIL=%0d",
+    $display("    boveda    AUTH=%0d AUTHFAIL=%0d",
              psw[`PSW_AUTH], psw[`PSW_AUTHFAIL]);
-    $fdisplay(salida, "    fallas    EXC=%0d CAUSE=%s",
+    $display("    fallas    EXC=%0d CAUSE=%s",
              psw[`PSW_EXC], nombre_causa(psw[`PSW_CAUSE]));
 
     // ------------------------------------------------------------------------
     if (palabras_a_mostrar > 0) begin
-      $fdisplay(salida, "");
-      $fdisplay(salida, "  memoria de datos desde 0x%08h", mostrar_desde);
+      $display("");
+      $display("  memoria de datos desde 0x%08h", mostrar_desde);
       for (i = 0; i < palabras_a_mostrar; i = i + 1)
-        $fdisplay(salida, "    0x%08h  %08h  %11d", mostrar_desde + 4 * i,
+        $display("    0x%08h  %08h  %11d", mostrar_desde + 4 * i,
                  dut.u_dmem.storage[mostrar_desde / 4 + i],
                  $signed(dut.u_dmem.storage[mostrar_desde / 4 + i]));
     end
 
     // ------------------------------------------------------------------------
-    // Lo que el programa escribio: las palabras de la memoria de datos que
-    // terminan distintas de como empezaron. Una escritura que deja el mismo
-    // valor que habia no aparece.
-    cambios = 0; primer_cambio = -1; ultimo_cambio = -1; mostrados = 0;
-    for (i = 0; i < CANTIDAD_PALABRAS; i = i + 1)
-      if (dut.u_dmem.storage[i] !== memoria_inicial[i]) begin
-        cambios = cambios + 1;
-        if (primer_cambio < 0) primer_cambio = i;
-        ultimo_cambio = i;
-      end
-    $fdisplay(salida, "");
-    if (cambios == 0)
-      $fdisplay(salida, "  memoria escrita por el programa: ninguna palabra cambio");
-    else begin
-      $fdisplay(salida, "  memoria escrita por el programa: %0d palabras, de 0x%08h a 0x%08h",
-                cambios, 4 * primer_cambio, 4 * ultimo_cambio);
-      $fdisplay(salida, "    direccion   antes     ahora     ahora (decimal)");
-      for (i = primer_cambio; i <= ultimo_cambio; i = i + 1)
-        if (dut.u_dmem.storage[i] !== memoria_inicial[i] &&
-            mostrados < MAXIMO_CAMBIOS_EN_PANTALLA) begin
-          $fdisplay(salida, "    0x%08h  %08h  %08h  %11d", 4 * i,
-                    memoria_inicial[i], dut.u_dmem.storage[i],
-                    $signed(dut.u_dmem.storage[i]));
-          mostrados = mostrados + 1;
-        end
-      if (cambios > mostrados)
-        $fdisplay(salida, "    ... y %0d palabras mas (VOLCADO= guarda la memoria completa)",
-                  cambios - mostrados);
-    end
-
-    // ------------------------------------------------------------------------
     if (archivo_volcado != "") begin
       $writememh(archivo_volcado, dut.u_dmem.storage);
-      $fdisplay(salida, "");
-      $fdisplay(salida, "  memoria de datos completa guardada en %s", archivo_volcado);
-    end
-
-    if (canal_escrituras != 0) begin
-      $fdisplay(canal_escrituras, "");
-      $fdisplay(canal_escrituras, "  %0d escrituras en total", lineas_escritas);
-      $fclose(canal_escrituras);
       $display("");
-      $display("  escrituras guardadas en %s", archivo_escrituras);
-      canal_escrituras = 0;
-    end
-    if (canal_archivo != 0) begin
-      $fclose(canal_archivo);
-      $display("");
-      $display("  resultado guardado en %s", archivo_resultado);
+      $display("  memoria de datos completa guardada en %s", archivo_volcado);
     end
 
     $display("");
@@ -703,7 +580,24 @@ module tb_programa;
       $display("RESULTADO: FALLA (no termino; probar con CICLOS= mas alto)");
       $fatal(1, "el programa no llego a HALT");
     end
-    $display("RESULTADO: OK");
+    // Deliberadamente NO se imprime "RESULTADO: OK". En este proyecto esa linea
+    // significa "todos los casos pasaron", y aqui no hay casos: este ejecutor
+    // no compara ni un solo valor contra nada. Lo unico que comprobo es que el
+    // programa llego a HALT, que es lo que dice la linea de abajo.
+    //
+    // La distincion no es pedanteria. Un programa que calcula mal termina
+    // igual de bien, y su salida se ve identica a la de uno correcto: el que
+    // mira la pantalla es el oraculo. Si esto dijera OK, una corrida a mano
+    // pasaria por verificacion y un error aritmetico se daria por descartado
+    // sin que nadie comparara nada.
+    //
+    // Para que un programa quede verificado de verdad va a tb_ejemplos.sv, que
+    // compara lo que deja contra valores calculados fuera del simulador.
+    $display("TERMINO: el programa llego a HALT");
+    $display("");
+    $display("  Esto NO es una verificacion: este ejecutor muestra el resultado,");
+    $display("  no lo compara con nada. Los programas comprobados contra sus");
+    $display("  valores esperados estan en tb_ejemplos.sv (make ejemplos).");
     $finish;
   end
 

@@ -338,6 +338,52 @@ module tb_archivo;
     end
     check_int("ninguna subllave aparece en los 64 KB de datos", malos, 0);
 
+    // ------------------------------------------------------------------------
+    $display("");
+    $display("[7] ni la credencial ni la llave quedan en registros");
+    // ------------------------------------------------------------------------
+    // La memoria de datos no es el unico sitio donde se puede filtrar una
+    // llave. vault_sesion.s la arma en R5 a R8 y la credencial en R1 a R4, y
+    // KSETW no borra nada: sin un borrado explicito, las ocho palabras siguen
+    // en el banco cuando el programa termina, FUERA de la region segura, a la
+    // vista de cualquier codigo que corra despues.
+    //
+    // Por eso vault_sesion.s pone un `movi rN, #0` en las dos ALU de los mismos
+    // bundles que llevan los KSETW. Es gratis en ciclos, porque todos los slots
+    // de un bundle leen el estado de registros PREVIO al bundle: el KSETW toma
+    // su palabra antes de que el borrado surta efecto, incluso en el cuarto
+    // bundle, donde S1 escribe R8 y S3 lo lee.
+    //
+    // Esta seccion es la que obliga a que siga siendo asi. Sin ella el borrado
+    // se puede quitar y la suite entera pasa igual, que fue justo lo que pasaba
+    // cuando se escribio el borrado: el cambio era correcto y nada lo defendia.
+
+    malos = 0;
+    for (i = 1; i <= 8; i = i + 1) begin
+      if (regs_c[i] !== 32'd0) malos = malos + 1;
+      if (regs_d[i] !== 32'd0) malos = malos + 1;
+    end
+    check_int("R1 a R8 quedan en cero en los dos procesadores", malos, 0);
+
+    // Y por si alguien reacomoda el programa y usa otros registros: se barren
+    // los dieciseis contra las ocho palabras secretas. Las cuatro de la llave
+    // son las de la ranura 0 y las otras cuatro son ROT_SECRET, que es la
+    // contrasena del procesador y no debe sobrevivir a la sesion tampoco.
+    malos = 0;
+    for (i = 0; i < `NREGS; i = i + 1) begin
+      if (regs_c[i] === 32'h1111_1111 || regs_c[i] === 32'h2222_2222 ||
+          regs_c[i] === 32'h3333_3333 || regs_c[i] === 32'h4444_4444 ||
+          regs_c[i] === 32'h7654_3210 || regs_c[i] === 32'hFEDC_BA98 ||
+          regs_c[i] === 32'h89AB_CDEF || regs_c[i] === 32'h0123_4567)
+        malos = malos + 1;
+      if (regs_d[i] === 32'h1111_1111 || regs_d[i] === 32'h2222_2222 ||
+          regs_d[i] === 32'h3333_3333 || regs_d[i] === 32'h4444_4444 ||
+          regs_d[i] === 32'h7654_3210 || regs_d[i] === 32'hFEDC_BA98 ||
+          regs_d[i] === 32'h89AB_CDEF || regs_d[i] === 32'h0123_4567)
+        malos = malos + 1;
+    end
+    check_int("ninguno de los 16 registros trae llave ni credencial", malos, 0);
+
 `ifdef FORCE_FAIL
     // ------------------------------------------------------------------------
     $display("");

@@ -102,6 +102,16 @@ DEPS_programa     := $(wildcard $(CPU)/*.sv)
 DEPS_credencial   := $(wildcard $(CPU)/*.sv) \
                      $(PROGS)/cifrar_archivo.hex \
                      $(PROGS)/archivo_prueba.hex
+# tb_ejemplos monta tres procesadores, uno por programa de demostracion, y
+# compara lo que dejan contra los valores de sus cabeceras
+DEPS_ejemplos     := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/fibonacci.hex \
+                     $(PROGS)/estadisticas.hex \
+                     $(PROGS)/sesion_sin_logout.hex
+# tb_sum corre el programa que produjo el compilador NOVA de CE1108, para
+# comprobar que su generador de codigo y este procesador siguen de acuerdo
+DEPS_sum          := $(wildcard $(CPU)/*.sv) \
+                     $(PROGS)/suma_10_15.hex $(PROGS)/suma_10_15_datos.hex
 
 # ---- Opciones de compilacion por unidad -------------------------------------
 # tb_asm es el unico testbench que no arma su programa adentro: el .hex entra
@@ -110,11 +120,13 @@ XFLAGS_asm := -DCERBERO_IMEM_FILE='"$(PROGS)/feistel.hex"' \
               -DCERBERO_DMEM_FILE='"$(PROGS)/feistel_datos.hex"'
 XFLAGS_div := -DCERBERO_IMEM_FILE='"$(PROGS)/div32_prueba.hex"' \
               -DCERBERO_DMEM_FILE='"$(PROGS)/div32_prueba_datos.hex"'
+XFLAGS_sum := -DCERBERO_IMEM_FILE='"$(PROGS)/suma_10_15.hex"' \
+              -DCERBERO_DMEM_FILE='"$(PROGS)/suma_10_15_datos.hex"'
 
 # ---- Unidades sin modulo propio (testbenches de integracion) ----------------
 # Para estas, la receta no antepone $(CPU)/<unidad>.sv
 NO_RTL := crypto_vault latency wconf pipeline fetch_flow asm div archivo cifrado \
-          credencial descifrado programa
+          credencial descifrado programa ejemplos sum
 
 # Objetivos derivados. Se nombran en variables porque las reglas de abajo son
 # ESTATICAS y no implicitas: make omite la busqueda de reglas implicitas para
@@ -179,6 +191,11 @@ BUNDLES_div32_prueba := 128
 PALABRAS_div32_prueba := 64
 BUNDLES_cifrar_archivo    := 2048
 BUNDLES_descifrar_archivo := 2048
+# tb_ejemplos carga el .data de estadisticas.s en una dmem de 16384 palabras
+PALABRAS_estadisticas := 16384
+# tb_sum instancia memorias chicas: 64 bundles y 16 palabras
+BUNDLES_suma_10_15  := 64
+PALABRAS_suma_10_15 := 16
 
 $(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
 	$(ASM) $< -o $(PROGS)/$*.hex --datos $(PROGS)/$*_datos.hex \
@@ -188,7 +205,9 @@ $(PROGS)/%.hex $(PROGS)/%_datos.hex: $(PROGS)/%.s $(CPU)/cerbero_defs.svh
 .PHONY: programas cobertura
 programas: $(PROGS)/feistel.hex $(PROGS)/div32_prueba.hex \
            $(PROGS)/cifrar_archivo.hex $(PROGS)/descifrar_archivo.hex \
-           $(PROGS)/archivo_prueba.hex
+           $(PROGS)/archivo_prueba.hex $(PROGS)/fibonacci.hex \
+           $(PROGS)/estadisticas.hex $(PROGS)/sesion_sin_logout.hex \
+           $(PROGS)/suma_10_15.hex
 
 # Los dos programas de archivo incluyen los mismos dos fragmentos
 $(PROGS)/cifrar_archivo.hex $(PROGS)/descifrar_archivo.hex: \
@@ -321,27 +340,15 @@ solo-descifrar: tb_descifrado.vvp contenedor_libre.hex $(PROGRAMAS_LLAVE)
 #   make correr PROG=fibonacci.s MOSTRAR=0x100 PALABRAS=47
 #
 # Ensambla el programa y lo corre en el procesador completo hasta HALT. Muestra
-# cuando sube y baja AUTH, la primera falla, los registros, el PSW y la memoria
-# que el programa escribio.
+# cuando sube y baja AUTH, la primera falla, los registros y el PSW.
 #
-#   PROG=      el programa en ensamblador. Basta el nombre, con o sin .s: se
-#              busca aqui y en tools/programas
-#   HEX=       en lugar de PROG, un programa ya en binario: un bundle por linea,
-#              32 digitos hexadecimales, como el que produce el ensamblador o
-#              un compilador que emita binario. Se carga tal cual, sin
-#              ensamblar; la traza muestra direcciones en vez de instrucciones
+#   PROG=      el programa en ensamblador (obligatorio). Basta el nombre, con o
+#              sin .s: se busca aqui y en tools/programas
 #   MEMORIA=   imagen inicial de la memoria de datos, por ejemplo la que genera
 #              load_file.py. Sin ella, la memoria arranca con el .data del
 #              programa
 #   VOLCADO=   archivo donde guardar la memoria de datos completa al terminar,
 #              para sacar el resultado con extract_data.py
-#   RESULTADO= archivo donde guardar el resumen final (ciclos, registros, PSW y
-#              la memoria de MOSTRAR). Por omision resultado_<programa>.txt;
-#              RESULTADO= vacio no lo guarda
-#   ESCRITURAS= archivo con cada escritura a registros y a memoria de toda la
-#              corrida: ciclo, bundle, valor e instruccion. Por omision
-#              escrituras_<programa>.txt; ESCRITURAS= vacio no lo guarda
-#   ESCRITURAS_MAX= tope de lineas de ese archivo (50 000)
 #   LLAVE=     solo para cifrar_archivo.s y descifrar_archivo.s: corre una copia
 #              del programa con esa llave, generada por llave.py
 #   MOSTRAR=   direccion desde donde mostrar la memoria en pantalla, y
@@ -362,10 +369,6 @@ PROG     ?=
 MEMORIA  ?=
 VOLCADO  ?=
 MOSTRAR  ?= 0
-HEX      ?=
-RESULTADO ?= resultado_$(NOMBRE_PROG).txt
-ESCRITURAS ?= escrituras_$(NOMBRE_PROG).txt
-ESCRITURAS_MAX ?= 50000
 PALABRAS ?= 0
 CICLOS   ?= 2000000
 TRAZA    ?= 0
@@ -377,33 +380,17 @@ PROG_CON_S   = $(if $(filter %.s,$(PROG)),$(PROG),$(PROG).s)
 PROG_ENCONTRADO = $(if $(findstring /,$(PROG_CON_S)),$(PROG_CON_S),$(if \
                   $(wildcard $(PROG_CON_S)),$(PROG_CON_S),$(PROGS)/$(PROG_CON_S)))
 
-# Nombre del programa para los archivos de salida, venga de PROG o de HEX
-NOMBRE_PROG = $(if $(strip $(HEX)),$(basename $(notdir $(HEX))),$(basename $(notdir $(PROG_CON_S))))
-FUENTE_PROG = $(if $(strip $(HEX)),$(notdir $(HEX)),$(notdir $(PROG_CON_S)))
-
 # Con LLAVE, el programa que se ensambla es la copia que genera llave.py
 PROG_A_ENSAMBLAR = $(if $(strip $(LLAVE)),$(LLAVE_DIR)/$(notdir $(PROG_CON_S)),$(PROG_ENCONTRADO))
 
 .PHONY: correr
 correr: tb_programa.vvp
-	@test -z "$(MEMORIA)" -o -f "$(MEMORIA)" || \
-	    { echo "error: no se encontro la imagen de memoria $(MEMORIA)"; exit 2; }
-ifneq ($(strip $(HEX)),)
-	@test -z "$(PROG)" || { echo "error: se usa PROG= o HEX=, no los dos"; exit 2; }
-	@test -f "$(HEX)" || { echo "error: no se encontro $(HEX)"; exit 2; }
-	@! grep -nvE '^[[:space:]]*([0-9A-Fa-f_]{1,32}|@[0-9A-Fa-f]+|//.*)?[[:space:]]*\r?$$' "$(HEX)" | head -3 | \
-	    sed 's/^/error: linea que no es un bundle en hexadecimal: /' | grep . || exit 2
-	@# Se rellena con NOP hasta los 2048 bundles de la memoria, para que
-	@# $$readmemh no avise que faltan palabras
-	{ cat "$(HEX)"; yes 00000000000000000000000000000000 | head -n 2048; } | \
-	    head -n 2048 > programa.hex
-	@rm -f programa_datos.hex programa_texto.txt
-	@touch programa_datos.hex
-else
-	@test -n "$(PROG)" || { echo "error: falta PROG=programa.s (o HEX=programa.hex)"; exit 2; }
+	@test -n "$(PROG)" || { echo "error: falta PROG=programa.s"; exit 2; }
 	@test -f "$(PROG_ENCONTRADO)" || \
 	    { echo "error: no se encontro $(PROG_CON_S) ni aqui ni en tools/programas"; \
 	      exit 2; }
+	@test -z "$(MEMORIA)" -o -f "$(MEMORIA)" || \
+	    { echo "error: no se encontro la imagen de memoria $(MEMORIA)"; exit 2; }
 ifneq ($(strip $(LLAVE)),)
 	python3 $(TOOLS)/llave.py "$(LLAVE)" --salida $(LLAVE_DIR)
 	@test -f "$(PROG_A_ENSAMBLAR)" || \
@@ -413,14 +400,11 @@ endif
 	$(ASM) $(PROG_A_ENSAMBLAR) -o programa.hex --datos programa_datos.hex \
 	       --bundles 2048 --palabras 16384 --listado programa.lst
 	@python3 $(TOOLS)/listado_a_texto.py programa.lst -o programa_texto.txt
-endif
-	$(VVP) -n tb_programa.vvp +PROGRAMA=programa.hex \
-	       +TEXTO=$(if $(strip $(HEX)),,programa_texto.txt) \
+	$(VVP) -n tb_programa.vvp +PROGRAMA=programa.hex +TEXTO=programa_texto.txt \
 	       +DATOS=$(if $(MEMORIA),$(MEMORIA),$$(grep -q "[0-9A-Fa-f]" programa_datos.hex && echo programa_datos.hex)) \
 	       +VOLCADO=$(VOLCADO) +CICLOS=$(CICLOS) \
 	       +MOSTRAR=$(shell printf '%d' $(MOSTRAR)) +PALABRAS=$(PALABRAS) \
-	       +TRAZA=$(TRAZA) +RESULTADO=$(RESULTADO) +FUENTE=$(FUENTE_PROG) \
-	       +ESCRITURAS=$(ESCRITURAS) +ESCRITURAS_MAX=$(ESCRITURAS_MAX)
+	       +TRAZA=$(TRAZA)
 
 # Comprueba que el programa de cobertura usa el 100% del conjunto
 cobertura:
@@ -453,6 +437,6 @@ clean:
 	rm -f *.vvp *.vcd cifrado_volcado.hex cifrado_volcado.bin
 	rm -f archivo_libre.hex cifrado_libre.hex cifrado_libre.bin
 	rm -f contenedor_libre.hex descifrado_libre.hex descifrado_libre.bin
-	rm -f criptograma.bin programa.hex programa_datos.hex programa.lst programa_texto.txt resultado_*.txt escrituras_*.txt
+	rm -f criptograma.bin programa.hex programa_datos.hex programa.lst programa_texto.txt
 	rm -rf llave_gen
 	rm -f $(PROGS)/*.hex
